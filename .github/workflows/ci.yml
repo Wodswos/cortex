@@ -1,0 +1,23 @@
+name: checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  web-server:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        browser: [chromium, webkit]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+      - run: pnpm --filter @cortex/e2e exec playwright install --with-deps ${{ matrix.browser }}
+      - run: pnpm e2e --project=${{ matrix.browser }}

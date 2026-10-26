@@ -1,0 +1,17 @@
+services:
+  cortex:
+    build: .
+    container_name: cortex
+    ports:
+      - "30090:30090"
+    volumes:
+      - ./data:/app/data
+    environment:
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:30090/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

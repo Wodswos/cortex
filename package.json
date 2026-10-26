@@ -1,0 +1,25 @@
+{
+  "name": "cortex",
+  "private": true,
+  "packageManager": "pnpm@10.12.1",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "@tauri-apps/cli"
+    ]
+  },
+  "scripts": {
+    "dev": "pnpm --filter @cortex/web dev",
+    "dev:server": "pnpm --filter @cortex/server dev",
+    "build": "pnpm --filter @cortex/web build && pnpm --filter @cortex/server build && node scripts/check-js.mjs",
+    "typecheck": "pnpm -r --if-present typecheck && node scripts/check-js.mjs",
+    "test": "pnpm -r --if-present test",
+    "e2e": "pnpm --filter @cortex/e2e e2e",
+    "docker:build": "docker build -t cortex .",
+    "docker:run": "docker run -d --name cortex -p 30090:30090 -v $(pwd)/data:/app/data cortex",
+    "build:desktop": "pnpm --filter @cortex/desktop build"
+  }
+}

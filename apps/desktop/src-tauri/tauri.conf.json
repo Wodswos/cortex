@@ -1,0 +1,44 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Cortex",
+  "version": "0.1.0",
+  "identifier": "app.cortex.desktop",
+  "build": {
+    "frontendDist": "../../web/dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "pnpm --filter @cortex/web dev",
+    "beforeBuildCommand": "pnpm --filter @cortex/web build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Cortex",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 940,
+        "minHeight": 600,
+        "transparent": false,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
+      }
+    ],
+    "security": {
+      "csp": null
+    },
+    "trayIcon": {
+      "iconPath": "icons/icon.png",
+      "iconAsTemplate": false,
+      "menuOnLeftClick": false
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["dmg", "app"],
+    "icon": ["icons/icon.icns", "icons/icon.png"]
+  },
+  "plugins": {
+    "global-shortcut": {
+      "description": "Quick Capture"
+    }
+  }
+}

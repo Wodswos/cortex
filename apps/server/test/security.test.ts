@@ -1,0 +1,61 @@
+import { afterEach, describe, expect, it } from 'vitest';
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { DB } from '../src/db';
+import { Connections, parseSshHost, sshArgs, shellQuote } from '../src/connections';
+import { originAllowed, RateLimit, hashPassword, verifyPassword } from '../src/security';
+const cleanup: (() => void)[] = [];
+afterEach(() => { while (cleanup.length) cleanup.pop()!(); });
+describe('account and terminal security', () => {
+  it('keeps identical profile ids and encrypted credentials scoped to their account', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cortex-security-'));
+    const db = new DB(dir); cleanup.push(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
+    const registry = new Connections(db, dir);
+    db.saveServer({ id: 'host', user_id: 'a', name: 'A host', host: 'alice@host-a:2222', password_cipher: registry.encrypt('fixture-only-password') });
+    expect(registry.resolve('b', 'host')).toBeNull();
+    expect(db.getServer('a', 'host')!.password_cipher).not.toContain('fixture-only-password');
+    expect(registry.public(db.getServer('a', 'host')!)).not.toHaveProperty('password');
+    expect(registry.resolve('a', 'host')!.password).toBe('fixture-only-password');
+    const reopened = new Connections(db, dir);
+    expect(reopened.resolve('a', 'host')!.password).toBe('fixture-only-password');
+    const connection = registry.resolve('a', 'host')!;
+    let args = sshArgs(connection);
+    expect(args).toContain('IdentityAgent=none'); expect(args).toContain('IdentityFile=none'); expect(args).toContain('/dev/null');
+    expect(args.slice(-3)).toEqual(['-p', '2222', 'alice@host-a']);
+    writeFileSync(join(connection.sshDir, 'id_ed25519'), 'fixture key');
+    args = sshArgs(connection);
+    expect(args).toContain(join(dir, 'ssh', 'a', 'id_ed25519'));
+    expect(args.join(' ')).not.toContain('/root/.ssh');
+    db.deleteServer('b', 'host'); expect(db.getServer('a', 'host')).not.toBeNull();
+    expect(readFileSync(join(dir, 'credentials.key'))).toHaveLength(32);
+  });
+  it('consumes invitations atomically and cannot create a second bootstrap administrator', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cortex-registration-'));
+    const db = new DB(dir); cleanup.push(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
+    const first = db.registerUser('first', 'hash', 'salt');
+    expect(first.is_admin).toBe(1);
+    expect(() => db.registerUser('second', 'hash', 'salt')).toThrow('邀请码无效');
+    const invite = db.createInvite(first.id);
+    const second = db.registerUser('second', 'hash', 'salt', invite.code);
+    expect(second.is_admin).toBe(0);
+    expect(() => db.registerUser('third', 'hash', 'salt', invite.code)).toThrow();
+    expect(db.countUsers()).toBe(2);
+  });
+  it('validates targets, ports, shell quoting, request origins and rate windows', () => {
+    expect(parseSshHost('-oProxyCommand=bad')).toBeNull();
+    expect(parseSshHost('user@host:65536')).toBeNull();
+    expect(parseSshHost('user@[::1]:22')).toEqual({ target: 'user@::1', port: '22' });
+    expect(shellQuote('$HOME')).toBe("'$HOME'");
+    expect(originAllowed({ host: 'cortex.example', origin: 'https://cortex.example' })).toBe(true);
+    expect(originAllowed({ host: 'cortex.example', origin: 'https://evil.example' })).toBe(false);
+    const limiter = new RateLimit(2, 1000);
+    expect(limiter.allow('a', 0)).toBe(true); expect(limiter.allow('a', 1)).toBe(true);
+    expect(limiter.allow('a', 2)).toBe(false); expect(limiter.allow('a', 1000)).toBe(true);
+  });
+  it('verifies asynchronous password hashes', async () => {
+    const { hash, salt } = await hashPassword('fixture-password');
+    expect(await verifyPassword('fixture-password', salt, hash)).toBe(true);
+    expect(await verifyPassword('wrong', salt, hash)).toBe(false);
+  });
+});

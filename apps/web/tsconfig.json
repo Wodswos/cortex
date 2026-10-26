@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "paths": {
+      "@cortex/core": ["../../packages/core/src/index.ts"],
+      "@cortex/crdt": ["../../packages/crdt/src/index.ts"],
+      "@cortex/ui": ["../../packages/ui/src/index.ts"],
+      "@cortex/platform": ["../../packages/platform/src/index.ts"],
+      "@/*": ["./src/*"]
+    },
+    "types": ["vite/client"]
+  },
+  "include": ["src", "test", "vite.config.ts"]
+}

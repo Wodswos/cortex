@@ -1,0 +1,257 @@
+@import "tailwindcss";
+
+/* Tailwind v4 自动探测只覆盖 CSS 入口所在工程的源码;本文件挂在 packages/ui,
+   大量只出现在 ui 包里的工具类(Sheet 的 top-16/right-4 float 定位、max-w-[488px] 抽屉宽、
+   max-h-[92vh] 底部抽屉等)若不显式声明扫描范围就不会生成 —— 生成缺失 = 布局类直接失效
+   (曾经的"浮窗看不见/右抽屉全屏"根因)。这里显式指向整个 monorepo。 */
+@source "../../../";
+
+/* dark-first:html 默认挂 .dark,浅色为二等公民 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* React Flow 背景网点(SVG)不能吃指针事件:框选/点空白取消选中等
+   都依赖 event.target 是 pane 本身,被背景图案截走后手势全部失效。
+   同理,导图的连线不需要点击/悬停交互,描边也不许截走指针事件。 */
+.react-flow .react-flow__background,
+.react-flow .react-flow__edge,
+.react-flow .react-flow__edge * {
+  pointer-events: none;
+}
+
+:root {
+  --background: #f4f5f7;
+  --surface: rgba(255, 255, 255, 0.72);
+  --surface-solid: #ffffff;
+  --surface-raised: rgba(255, 255, 255, 0.9);
+  --foreground: #18181b;
+  --muted-foreground: #6b7280;
+  --border: rgba(24, 24, 27, 0.1);
+  --border-strong: rgba(24, 24, 27, 0.18);
+  --ring: rgba(34, 211, 238, 0.6);
+  --accent-from: #22d3ee;
+  --accent-to: #8b5cf6;
+  --accent-solid: #0891b2;
+  --danger: #f43f5e;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --glow: 0 0 24px rgba(34, 211, 238, 0.25);
+  color-scheme: light;
+}
+
+.dark {
+  --background: #09090f;
+  --surface: rgba(255, 255, 255, 0.04);
+  --surface-solid: #101018;
+  --surface-raised: rgba(20, 20, 30, 0.85);
+  --foreground: #f4f4f5;
+  --muted-foreground: #8b8b96;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --ring: rgba(34, 211, 238, 0.6);
+  --danger: #fb7185;
+  --success: #34d399;
+  --warning: #fbbf24;
+  --glow: 0 0 32px rgba(34, 211, 238, 0.22);
+  color-scheme: dark;
+}
+
+/* 四套 accent(设置页可换) */
+[data-accent='cyan-violet'] { --accent-from: #22d3ee; --accent-to: #8b5cf6; --accent-solid: #0891b2; }
+[data-accent='emerald']     { --accent-from: #34d399; --accent-to: #0ea5e9; --accent-solid: #059669; }
+[data-accent='amber']       { --accent-from: #fbbf24; --accent-to: #f43f5e; --accent-solid: #d97706; }
+[data-accent='rose']        { --accent-from: #fb7185; --accent-to: #a78bfa; --accent-solid: #e11d48; }
+
+/* 黑白极简:浅色模式用近黑,深色模式用浅灰;并去掉背景光晕,保持克制 */
+[data-accent='mono'] {
+  --accent-from: #18181b;
+  --accent-to: #3f3f46;
+  --accent-solid: #18181b;
+  --ring: rgba(24, 24, 27, 0.5);
+  --glow: none;
+}
+.dark[data-accent='mono'] {
+  /* 中灰而非浅灰:gradient-bg 配 text-white 仍可读,深底上也有层次 */
+  --accent-from: #52525b;
+  --accent-to: #71717a;
+  --accent-solid: #e4e4e7;
+  --ring: rgba(228, 228, 231, 0.5);
+}
+[data-accent='mono'] body::before {
+  display: none;
+}
+
+/* 优先级色 = 四象限色 = 导图连线色。**固定语义色,不随 accent 主题变**
+   (曾按主题换色:P0 红但 P1 变成主题色,mono 下更是全灰,优先级一眼看不出;
+   现按滴答清单惯例固定 红 P0 / 橙 P1 / 蓝 P2 / 灰 P3)。 */
+:root {
+  --p0: #e5484d;
+  --p1: #f59e0b;
+  --p2: #3b82f6;
+  --p3: #9ca3af;
+  --p0-glow: rgba(229, 72, 77, 0.08);
+  --p1-glow: rgba(245, 158, 11, 0.08);
+  --p2-glow: rgba(59, 130, 246, 0.08);
+  --p3-glow: rgba(156, 163, 175, 0.06);
+}
+.dark {
+  --p0: #fb7185;
+  --p1: #fbbf24;
+  --p2: #60a5fa;
+  --p3: #a1a1aa;
+  --p0-glow: rgba(251, 113, 133, 0.09);
+  --p1-glow: rgba(251, 191, 36, 0.08);
+  --p2-glow: rgba(96, 165, 250, 0.08);
+  --p3-glow: rgba(161, 161, 170, 0.05);
+}
+/* 象限 ↔ 优先级是同一件事(do=P0 plan=P1 delegate=P2 eliminate=P3),别名复用 */
+:root,
+.dark {
+  --quad-do: var(--p0);
+  --quad-plan: var(--p1);
+  --quad-delegate: var(--p2);
+  --quad-eliminate: var(--p3);
+  --quad-do-glow: var(--p0-glow);
+  --quad-plan-glow: var(--p1-glow);
+  --quad-delegate-glow: var(--p2-glow);
+  --quad-eliminate-glow: var(--p3-glow);
+}
+
+/* mono 不只是换色,是「极简」风格:去毛玻璃模糊、实底面、小圆角、无阴影光晕 */
+[data-accent='mono'] .glass,
+[data-accent='mono'] .glass-raised {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: var(--surface-solid);
+  box-shadow: none;
+}
+[data-accent='mono'] .rounded-2xl { border-radius: 10px; }
+[data-accent='mono'] .rounded-xl { border-radius: 8px; }
+[data-accent='mono'] .rounded-lg { border-radius: 6px; }
+[data-accent='mono'] button.rounded-full,
+[data-accent='mono'] a.rounded-full,
+[data-accent='mono'] span.rounded-full { border-radius: 8px; }
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-solid: var(--surface-solid);
+  --color-surface-raised: var(--surface-raised);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted-foreground);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-accent-from: var(--accent-from);
+  --color-accent-to: var(--accent-to);
+  --color-accent: var(--accent-solid);
+  --color-danger: var(--danger);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-p0: var(--p0);
+  --color-p1: var(--p1);
+  --color-p2: var(--p2);
+  --color-p3: var(--p3);
+  --font-sans: 'Inter', ui-sans-serif, system-ui, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+html,
+body {
+  height: 100%;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: none;
+}
+
+/* 科技感底噪:两团缓慢漂移的 accent 光晕 */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(600px 400px at 8% -10%, color-mix(in srgb, var(--accent-from) 7%, transparent), transparent 70%),
+    radial-gradient(700px 500px at 100% 110%, color-mix(in srgb, var(--accent-to) 7%, transparent), transparent 70%);
+}
+
+@utility glass {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+}
+
+@utility glass-raised {
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  backdrop-filter: blur(20px) saturate(1.5);
+  -webkit-backdrop-filter: blur(20px) saturate(1.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+}
+
+@utility glow-border {
+  border: 1px solid color-mix(in srgb, var(--accent-from) 35%, transparent);
+  box-shadow: var(--glow);
+}
+
+@utility gradient-text {
+  background: linear-gradient(120deg, var(--accent-from), var(--accent-to));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@utility gradient-bg {
+  background: linear-gradient(120deg, var(--accent-from), var(--accent-to));
+}
+
+@utility tabular {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* 细滚动条 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+@keyframes breathe {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+@utility animate-breathe {
+  animation: breathe 2.4s ease-in-out infinite;
+}
+
+@keyframes pulse-line {
+  0%, 100% { box-shadow: 0 0 4px color-mix(in srgb, var(--accent-from) 60%, transparent); }
+  50% { box-shadow: 0 0 14px color-mix(in srgb, var(--accent-from) 90%, transparent); }
+}
+@utility animate-pulse-line {
+  animation: pulse-line 2s ease-in-out infinite;
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@utility animate-fade-up {
+  animation: fade-up 0.22s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

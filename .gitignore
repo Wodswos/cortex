@@ -1,0 +1,13 @@
+node_modules/
+dist/
+www/
+data/
+*.local
+.DS_Store
+*.tsbuildinfo
+.vite/
+test-results/
+playwright-report/
+apps/desktop/src-tauri/target/
+apps/mobile/ios/
+apps/mobile/android/

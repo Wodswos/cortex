@@ -1,0 +1,31 @@
+{
+  "name": "@cortex/crdt",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cortex/core": "workspace:*",
+    "lib0": "^0.2.99",
+    "y-protocols": "^1.0.6",
+    "y-indexeddb": "^9.0.12",
+    "yjs": "^13.6.20"
+  },
+  "peerDependencies": {
+    "react": "^18.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "react": "^18.3.1",
+    "typescript": "^5.7.3",
+    "vitest": "^3.1.4"
+  }
+}

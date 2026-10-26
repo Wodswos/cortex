@@ -1,0 +1,26 @@
+{
+  "name": "@cortex/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build:web": "pnpm --filter @cortex/web build",
+    "sync": "pnpm build:web && rm -rf www && cp -r ../web/dist www && cap sync",
+    "add:ios": "cap add ios",
+    "open:ios": "cap open ios",
+    "dev": "cap run ios",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/ios": "^6.2.0",
+    "@capacitor/local-notifications": "^6.1.0",
+    "@capacitor/share": "^6.0.2",
+    "@capacitor/app": "^6.0.1",
+    "@capacitor/haptics": "^6.0.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.2.0",
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.3"
+  }
+}
