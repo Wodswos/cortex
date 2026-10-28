@@ -1,14 +1,23 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { GripHorizontal, Link2, Trash2, Unlink, Check , Clock } from 'lucide-react';
+import { GripHorizontal, Link2, Trash2, Unlink, Check, Clock } from 'lucide-react';
 import { cn, Badge } from '@cortex/ui';
 import {
-  ScheduleEvent, EventKind, startOfDay, endOfDay, minutesOfDay, fmtHM, pad2, activeTasks, isStructural,
+  ScheduleEvent,
+  EventKind,
+  startOfDay,
+  endOfDay,
+  minutesOfDay,
+  fmtHM,
+  pad2,
+  activeTasks,
+  isStructural,
 } from '@cortex/core';
 import { useCortex, useCortexData } from '@cortex/crdt';
 import { useUI } from '@/state/ui';
 import { useTimer } from '@/focus/timer';
 import { EVENT_KIND_STYLE } from '@/shared/components';
+import { isComposing } from '@/shared/ime';
 
 const PX_PER_HOUR = 64;
 const SNAP_MIN = 5;
@@ -28,7 +37,15 @@ interface DragState {
   curEnd: number;
 }
 
-export function DayView({ date, onDateChange }: { date: Date; onDateChange: (d: Date) => void }) {
+export function DayView({
+  date,
+  onDateChange,
+  onCreateTask,
+}: {
+  date: Date;
+  onDateChange: (d: Date) => void;
+  onCreateTask?: (dueAt: number, event: React.PointerEvent) => void;
+}) {
   const data = useCortexData();
   const store = useCortex();
   const ui = useUI();
@@ -38,9 +55,16 @@ export function DayView({ date, onDateChange }: { date: Date; onDateChange: (d: 
   const dayRef = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<string | null>(null);
-  const [draft, setDraft] = useState<{ startMin: number; endMin: number; title: string; taskId?: string } | null>(null);
+  const [draft, setDraft] = useState<{
+    startMin: number;
+    endMin: number;
+    title: string;
+    taskId?: string;
+  } | null>(null);
   const [nowMin, setNowMin] = useState(() => minutesOfDay(new Date()));
-  const [dragTask, setDragTask] = useState<{ taskId: string; title: string; x: number; y: number } | null>(null);
+  const [dragTask, setDragTask] = useState<{ taskId: string; title: string; x: number; y: number } | null>(
+    null,
+  );
 
   const dayStart = startOfDay(date).getTime();
   const dayEnd = endOfDay(date).getTime();
@@ -89,14 +113,20 @@ export function DayView({ date, onDateChange }: { date: Date; onDateChange: (d: 
   const dueTasks = useMemo(
     () =>
       activeTasks(data.tasks).filter(
-        (t) => t.status !== 'inbox' && t.status !== 'done' && !isStructural(t) && t.dueAt != null && t.dueAt >= dayStart && t.dueAt < dayEnd,
+        (t) =>
+          t.status !== 'inbox' &&
+          t.status !== 'done' &&
+          !isStructural(t) &&
+          t.dueAt != null &&
+          t.dueAt >= dayStart &&
+          t.dueAt < dayEnd,
       ),
     [data.tasks, dayStart, dayEnd],
   );
 
   const localMin = (e: ScheduleEvent) => ({
-    start: clampMin(((e.start - dayStart) / 60000)),
-    end: clampMin(((e.end - dayStart) / 60000)),
+    start: clampMin((e.start - dayStart) / 60000),
+    end: clampMin((e.end - dayStart) / 60000),
   });
 
   // ---------- 事件拖拽/拉伸(自定义指针状态机) ----------
@@ -123,7 +153,11 @@ export function DayView({ date, onDateChange }: { date: Date; onDateChange: (d: 
     const min = snap(clampMin(pxToMin(e.clientY - rect.top)));
     if (drag.kind === 'move') {
       const dur = drag.endMin - drag.startMin;
-      setDrag({ ...drag, curStart: clampMin(snap(min - drag.grabOffsetMin), 0, dayMinutes - dur), curEnd: clampMin(snap(min - drag.grabOffsetMin), 0, dayMinutes - dur) + dur });
+      setDrag({
+        ...drag,
+        curStart: clampMin(snap(min - drag.grabOffsetMin), 0, dayMinutes - dur),
+        curEnd: clampMin(snap(min - drag.grabOffsetMin), 0, dayMinutes - dur) + dur,
+      });
     } else {
       setDrag({ ...drag, curEnd: Math.max(drag.curStart + SNAP_MIN, min) });
     }
@@ -136,7 +170,10 @@ export function DayView({ date, onDateChange }: { date: Date; onDateChange: (d: 
       if (drag.kind === 'move') {
         const delta = (drag.curStart - drag.startMin) * 60000;
         store.updateEvent(ev.id, { start: ev.start + delta, end: ev.end + delta });
-      } else store.updateEvent(ev.id, { end: Math.max(ev.start + SNAP_MIN * 60000, dayStart + drag.curEnd * 60000) });
+      } else
+        store.updateEvent(ev.id, {
+          end: Math.max(ev.start + SNAP_MIN * 60000, dayStart + drag.curEnd * 60000),
+        });
       store.stopUndoCapture();
     }
     setDrag(null);
@@ -149,7 +186,7 @@ export function DayView({ date, onDateChange }: { date: Date; onDateChange: (d: 
     setSelectedEvent(null);
     const rect = dayRef.current!.getBoundingClientRect();
     const from = snap(clampMin(pxToMin(e.clientY - rect.top)));
-    setSelectRect({ from, to: Math.min(dayMinutes, from + SNAP_MIN) });
+    setSelectRect({ from, to: from });
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
   const onBackgroundMove = (e: React.PointerEvent) => {
@@ -158,11 +195,13 @@ export function DayView({ date, onDateChange }: { date: Date; onDateChange: (d: 
     const to = snap(clampMin(pxToMin(e.clientY - rect.top)));
     setSelectRect((r) => (r ? { ...r, to } : r));
   };
-  const onBackgroundUp = () => {
+  const onBackgroundUp = (event: React.PointerEvent) => {
     if (!selectRect) return;
     const startMin = Math.min(selectRect.from, selectRect.to);
     const endMin = Math.min(dayMinutes, Math.max(selectRect.from + SNAP_MIN, selectRect.to));
-    if (endMin - startMin >= 15) setDraft({ startMin, endMin, title: '' });
+    if (onCreateTask && Math.abs(selectRect.from - selectRect.to) < SNAP_MIN) {
+      onCreateTask(dayStart + Math.min(startMin, dayMinutes - SNAP_MIN) * 60000, event);
+    } else if (endMin - startMin >= 15) setDraft({ startMin, endMin, title: '' });
     setSelectRect(null);
   };
 
@@ -176,7 +215,12 @@ export function DayView({ date, onDateChange }: { date: Date; onDateChange: (d: 
       const rect = dayRef.current?.getBoundingClientRect();
       setDragTask(null);
       if (!rect) return;
-      if (ev.clientX >= rect.left && ev.clientX <= rect.right && ev.clientY >= rect.top && ev.clientY <= rect.bottom) {
+      if (
+        ev.clientX >= rect.left &&
+        ev.clientX <= rect.right &&
+        ev.clientY >= rect.top &&
+        ev.clientY <= rect.bottom
+      ) {
         const min = Math.min(dayMinutes - SNAP_MIN, snap(clampMin(pxToMin(ev.clientY - rect.top))));
         store.createEvent({
           title,
@@ -211,45 +255,68 @@ export function DayView({ date, onDateChange }: { date: Date; onDateChange: (d: 
       {/* 时间轴主体 */}
       <div ref={scrollRef} data-testid="day-scroll" className="min-h-0 flex-1 overflow-y-auto">
         <div className="flex px-2 pb-24 pt-2 md:px-4">
-          <div className="relative select-none" style={{ width: `calc(100% - ${GUTTER}px)`, marginLeft: GUTTER }}>
+          <div
+            className="relative select-none"
+            style={{ width: `calc(100% - ${GUTTER}px)`, marginLeft: GUTTER }}
+          >
             {/* 小时刻度 */}
             <div className="absolute inset-y-0 -left-[52px] w-[52px]">
               {Array.from({ length: Math.ceil(dayMinutes / 60) }, (_, h) => (
-                <div key={h} className="absolute -translate-y-1/2 text-right pr-2 text-[10px] text-muted/70 tabular" style={{ top: minToPx(h * 60) }}>
+                <div
+                  key={h}
+                  className="absolute -translate-y-1/2 text-right pr-2 text-[10px] text-muted/70 tabular"
+                  style={{ top: minToPx(h * 60) }}
+                >
                   {fmtHM(dayStart + h * 3600000)}
                 </div>
               ))}
             </div>
             <div
               ref={dayRef}
-              className={cn('relative rounded-xl border border-[var(--border)] bg-[var(--surface)]', drag || selectRect ? 'cursor-grabbing' : 'cursor-copy')}
+              className={cn(
+                'relative rounded-xl border border-[var(--border)] bg-[var(--surface)]',
+                drag || selectRect ? 'cursor-grabbing' : 'cursor-copy',
+              )}
               style={{ height: minToPx(dayMinutes) }}
               onPointerDown={onBackgroundDown}
               onPointerMove={(e) => {
                 onBackgroundMove(e);
                 onDayPointerMove(e);
               }}
-              onPointerUp={() => {
-                onBackgroundUp();
+              onPointerUp={(event) => {
+                onBackgroundUp(event);
                 commitDrag();
               }}
               onDoubleClick={(e) => {
                 const rect = dayRef.current!.getBoundingClientRect();
                 const min = snap(clampMin(pxToMin(e.clientY - rect.top)));
-                setDraft({ startMin: Math.min(min, dayMinutes - SNAP_MIN), endMin: Math.min(dayMinutes, min + 60), title: '' });
+                setDraft({
+                  startMin: Math.min(min, dayMinutes - SNAP_MIN),
+                  endMin: Math.min(dayMinutes, min + 60),
+                  title: '',
+                });
               }}
             >
               {/* 网格线 */}
               {Array.from({ length: Math.ceil(dayMinutes / 60) }, (_, h) => (
                 <React.Fragment key={h}>
-                  <div className="absolute inset-x-0 border-t border-[var(--border)]" style={{ top: minToPx(h * 60) }} />
-                  <div className="absolute inset-x-0 border-t border-dashed border-[var(--border)]/50" style={{ top: minToPx(h * 60 + 30) }} />
+                  <div
+                    className="absolute inset-x-0 border-t border-[var(--border)]"
+                    style={{ top: minToPx(h * 60) }}
+                  />
+                  <div
+                    className="absolute inset-x-0 border-t border-dashed border-[var(--border)]/50"
+                    style={{ top: minToPx(h * 60 + 30) }}
+                  />
                 </React.Fragment>
               ))}
 
               {/* now line */}
               {isToday && (
-                <div className="absolute inset-x-0 z-10 animate-pulse-line" style={{ top: minToPx((Date.now() - dayStart) / 60000) }}>
+                <div
+                  className="absolute inset-x-0 z-10 animate-pulse-line"
+                  style={{ top: minToPx((Date.now() - dayStart) / 60000) }}
+                >
                   <div className="h-[2px] bg-gradient-to-r from-[var(--accent-from)] to-transparent" />
                   <span className="absolute -top-2.5 left-0 rounded-full gradient-bg px-1.5 text-[9px] font-bold text-white tabular">
                     {fmtHM(Date.now())}
@@ -287,7 +354,9 @@ export function DayView({ date, onDateChange }: { date: Date; onDateChange: (d: 
                   >
                     <Clock className="h-3 w-3 shrink-0 text-[var(--danger)]" />
                     <span className="truncate text-[11px] font-medium">{t.title || 'Untitled'}</span>
-                    <span className="ml-auto shrink-0 text-[9px] text-[var(--danger)] tabular">{fmtHM(t.dueAt!)}</span>
+                    <span className="ml-auto shrink-0 text-[9px] text-[var(--danger)] tabular">
+                      {fmtHM(t.dueAt!)}
+                    </span>
                   </button>
                 );
               })}
@@ -315,7 +384,10 @@ export function DayView({ date, onDateChange }: { date: Date; onDateChange: (d: 
                     onPointerDown={(e) => beginDrag(e, ev, 'move')}
                     onDoubleClick={() => linked && ui.selectTask(linked.id)}
                   >
-                    <div className="flex items-center gap-1 text-[11px] font-medium leading-tight" style={{ color: style.color }}>
+                    <div
+                      className="flex items-center gap-1 text-[11px] font-medium leading-tight"
+                      style={{ color: style.color }}
+                    >
                       {linked && <Link2 className="h-3 w-3 shrink-0" />}
                       <span className={cn('truncate', ev.completed && 'line-through')}>{ev.title}</span>
                       <span className="ml-auto shrink-0 tabular opacity-70">
@@ -343,7 +415,11 @@ export function DayView({ date, onDateChange }: { date: Date; onDateChange: (d: 
               {draft && (
                 <div
                   className="absolute left-1 right-1 z-20 rounded-xl glass-raised p-2"
-                  style={{ top: minToPx(draft.startMin), height: minToPx(draft.endMin - draft.startMin), minHeight: 56 }}
+                  style={{
+                    top: minToPx(draft.startMin),
+                    height: minToPx(draft.endMin - draft.startMin),
+                    minHeight: 56,
+                  }}
                   onPointerDown={(e) => e.stopPropagation()}
                 >
                   <input
@@ -351,6 +427,7 @@ export function DayView({ date, onDateChange }: { date: Date; onDateChange: (d: 
                     value={draft.title}
                     onChange={(e) => setDraft({ ...draft, title: e.target.value })}
                     onKeyDown={(e) => {
+                      if (isComposing(e)) return;
                       if (e.key === 'Enter') createDraft();
                       if (e.key === 'Escape') setDraft(null);
                     }}
@@ -367,11 +444,19 @@ export function DayView({ date, onDateChange }: { date: Date; onDateChange: (d: 
                   style={{ top: minToPx(localMin(selected).start) }}
                   onPointerDown={(e) => e.stopPropagation()}
                 >
-                  <button className="rounded-lg p-1.5 text-muted hover:text-foreground" title="完成" onClick={() => store.updateEvent(selected.id, { completed: !selected.completed })}>
+                  <button
+                    className="rounded-lg p-1.5 text-muted hover:text-foreground"
+                    title="完成"
+                    onClick={() => store.updateEvent(selected.id, { completed: !selected.completed })}
+                  >
                     <Check className="h-3.5 w-3.5" />
                   </button>
                   {selected.taskId ? (
-                    <button className="rounded-lg p-1.5 text-muted hover:text-foreground" title="解除任务关联" onClick={() => store.updateEvent(selected.id, { taskId: null })}>
+                    <button
+                      className="rounded-lg p-1.5 text-muted hover:text-foreground"
+                      title="解除任务关联"
+                      onClick={() => store.updateEvent(selected.id, { taskId: null })}
+                    >
                       <Unlink className="h-3.5 w-3.5" />
                     </button>
                   ) : null}
@@ -385,7 +470,14 @@ export function DayView({ date, onDateChange }: { date: Date; onDateChange: (d: 
                   >
                     ▶
                   </button>
-                  <button className="rounded-lg p-1.5 text-muted hover:text-[var(--danger)]" title="删除" onClick={() => { store.softDeleteEvent(selected.id); setSelectedEvent(null); }}>
+                  <button
+                    className="rounded-lg p-1.5 text-muted hover:text-[var(--danger)]"
+                    title="删除"
+                    onClick={() => {
+                      store.softDeleteEvent(selected.id);
+                      setSelectedEvent(null);
+                    }}
+                  >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
@@ -406,7 +498,9 @@ export function DayView({ date, onDateChange }: { date: Date; onDateChange: (d: 
       <aside className="hidden w-64 shrink-0 flex-col gap-2 overflow-y-auto border-l border-[var(--border)] p-3 xl:flex">
         <div className="flex items-center justify-between px-1">
           <span className="text-xs font-semibold text-muted">今日待排</span>
-          <span className="text-[10px] text-muted/60">{events.length - doneCount} 块 · 完成 {doneCount}</span>
+          <span className="text-[10px] text-muted/60">
+            {events.length - doneCount} 块 · 完成 {doneCount}
+          </span>
         </div>
         {unscheduled.length === 0 && (
           <div className="px-1 py-6 text-center text-xs text-muted/60">今天都排完了 🎉</div>

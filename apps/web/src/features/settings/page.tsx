@@ -1,12 +1,28 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { Download, Upload, LogOut, KeyRound, Moon, Sun, Palette, Server, Bell, CopyPlus, Trash2, CircleCheck, Plus, Terminal } from 'lucide-react';
+import {
+  Download,
+  Upload,
+  LogOut,
+  KeyRound,
+  Moon,
+  Sun,
+  Palette,
+  Server,
+  Bell,
+  CopyPlus,
+  Trash2,
+  CircleCheck,
+  Plus,
+  Terminal,
+} from 'lucide-react';
 import { Button, Input, Badge, Card, CardContent, CardHeader, CardTitle, cn } from '@cortex/ui';
 import { ACCENTS, Accent, generateICS, startOfDay, endOfDay, addDays, newId } from '@cortex/core';
 import { api, useCortex, useCortexData } from '@cortex/crdt';
 import { useAuth } from '@/app/auth';
 import { useTheme } from '@/app/theme';
 import { requestNotifPermission, notifSupported } from '@cortex/platform';
+import { isComposing } from '@/shared/ime';
 
 export default function SettingsPage() {
   const auth = useAuth();
@@ -25,24 +41,63 @@ export default function SettingsPage() {
   const [serverError, setServerError] = useState('');
   const [serverBusy, setServerBusy] = useState(false);
   const [editingServer, setEditingServer] = useState<string | null>(null);
+  const [connectionCheck, setConnectionCheck] = useState<{
+    id: string;
+    busy: boolean;
+    message: string;
+    failed: boolean;
+  } | null>(null);
+  const checkConnection = async (id: string) => {
+    setConnectionCheck({ id, busy: true, message: '正在连接并读取 tmux 会话…', failed: false });
+    try {
+      const result = await api.tmux<{ sessions: string[] }>('sessions', id);
+      setConnectionCheck({
+        id,
+        busy: false,
+        message: `连接成功，找到 ${result.sessions.length} 个 tmux 会话`,
+        failed: false,
+      });
+    } catch (error) {
+      setConnectionCheck({ id, busy: false, message: (error as Error).message, failed: true });
+    }
+  };
 
   const servers = data.settings.servers ?? [];
   const addServer = async () => {
-    const name = serverName.trim(), host = serverHost.trim();
+    const name = serverName.trim(),
+      host = serverHost.trim();
     if (!name || !host || serverBusy) return;
-    setServerBusy(true); setServerError('');
+    setServerBusy(true);
+    setServerError('');
     try {
-      const server = await api.saveServer(editingServer ?? newId(), { name, host, password: serverPassword || undefined });
-      store.updateSettings({ servers: [...store.getData().settings.servers.filter((item) => item.id !== server.id), server] });
-      setServerName(''); setServerHost(''); setServerPassword('');
+      const server = await api.saveServer(editingServer ?? newId(), {
+        name,
+        host,
+        password: serverPassword || undefined,
+      });
+      store.updateSettings({
+        servers: [...store.getData().settings.servers.filter((item) => item.id !== server.id), server],
+      });
+      setServerName('');
+      setServerHost('');
+      setServerPassword('');
       setEditingServer(null);
-    } catch (error) { setServerError((error as Error).message); }
-    finally { setServerBusy(false); }
+    } catch (error) {
+      setServerError((error as Error).message);
+    } finally {
+      setServerBusy(false);
+    }
   };
   const removeServer = async (id: string) => {
     setServerError('');
-    try { await api.removeServer(id); store.updateSettings({ servers: store.getData().settings.servers.filter((server) => server.id !== id) }); }
-    catch (error) { setServerError((error as Error).message); }
+    try {
+      await api.removeServer(id);
+      store.updateSettings({
+        servers: store.getData().settings.servers.filter((server) => server.id !== id),
+      });
+    } catch (error) {
+      setServerError((error as Error).message);
+    }
   };
 
   const loadInvites = async () => {
@@ -71,7 +126,10 @@ export default function SettingsPage() {
     const now = new Date();
     const events = store
       .getData()
-      .events.filter((e) => !e.deletedAt && e.end > startOfDay(now).getTime() && e.start < endOfDay(addDays(now, 30)).getTime())
+      .events.filter(
+        (e) =>
+          !e.deletedAt && e.end > startOfDay(now).getTime() && e.start < endOfDay(addDays(now, 30)).getTime(),
+      )
       .map((e) => ({
         uid: e.id,
         title: `[${e.completed ? 'x' : ' '}] ${e.title}`,
@@ -101,6 +159,8 @@ export default function SettingsPage() {
       if (file.size > 32 * 1024 * 1024) throw new Error('备份文件不能超过 32 MB');
       const json: unknown = JSON.parse(await file.text());
       const n = store.importJSON(json);
+      try { await store.flushPersistence(); }
+      catch { setImported('备份已合并，但本地保存失败。请保留此页面并导出备份后重试。'); return; }
       setImported(`已合并备份,新增 ${n} 条记录(旧 JSON 只补充缺失实体)`);
     } catch (e) {
       setImported(`导入失败:${(e as Error).message}`);
@@ -148,14 +208,22 @@ export default function SettingsPage() {
                       </Button>
                     </div>
                     {inviteCode && (
-                      <div className="mb-2 rounded-lg glass px-3 py-2 font-mono text-sm gradient-text">{inviteCode}</div>
+                      <div className="mb-2 rounded-lg glass px-3 py-2 font-mono text-sm gradient-text">
+                        {inviteCode}
+                      </div>
                     )}
                     {invites.length > 0 && (
                       <div className="space-y-1">
                         {invites.map((inv) => (
                           <div key={inv.code} className="flex items-center gap-2 text-[11px] text-muted">
                             <code className="opacity-70">{inv.code.slice(0, 8)}…</code>
-                            {inv.usedBy ? <Badge variant="success">已使用</Badge> : inv.revoked ? <Badge>已撤销</Badge> : <Badge variant="warning">待使用</Badge>}
+                            {inv.usedBy ? (
+                              <Badge variant="success">已使用</Badge>
+                            ) : inv.revoked ? (
+                              <Badge>已撤销</Badge>
+                            ) : (
+                              <Badge variant="warning">待使用</Badge>
+                            )}
                             {!inv.usedBy && !inv.revoked && (
                               <button
                                 className="ml-auto hover:text-[var(--danger)]"
@@ -205,7 +273,13 @@ export default function SettingsPage() {
                       theme.mode === m ? 'gradient-bg text-white' : 'glass text-muted hover:text-foreground',
                     )}
                   >
-                    {m === 'dark' ? <Moon className="h-3 w-3" /> : m === 'light' ? <Sun className="h-3 w-3" /> : <span className="text-[10px]">A</span>}
+                    {m === 'dark' ? (
+                      <Moon className="h-3 w-3" />
+                    ) : m === 'light' ? (
+                      <Sun className="h-3 w-3" />
+                    ) : (
+                      <span className="text-[10px]">A</span>
+                    )}
                     {m === 'dark' ? '深色' : m === 'light' ? '浅色' : '跟随系统'}
                   </button>
                 ))}
@@ -213,26 +287,26 @@ export default function SettingsPage() {
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm">强调色</span>
-              <div className="flex gap-2">
+              <div className="flex gap-2" role="group" aria-label="强调色">
                 {ACCENTS.map((a: Accent) => (
                   <button
                     key={a}
                     onClick={() => theme.setAccent(a)}
-                    className={cn('h-8 w-8 rounded-full transition-all', theme.accent === a && 'ring-2 ring-white/60')}
-                    style={{
-                      background:
-                        a === 'cyan-violet'
-                          ? 'linear-gradient(135deg,#22d3ee,#8b5cf6)'
-                          : a === 'emerald'
-                            ? 'linear-gradient(135deg,#34d399,#0ea5e9)'
-                            : a === 'amber'
-                              ? 'linear-gradient(135deg,#fbbf24,#f43f5e)'
-                              : a === 'rose'
-                                ? 'linear-gradient(135deg,#fb7185,#a78bfa)'
-                                : 'linear-gradient(135deg,#18181b,#71717a)',
-                    }}
-                    title={a === 'mono' ? '黑白极简' : a}
-                  />
+                    data-accent={a}
+                    aria-label={
+                      { 'cyan-violet': '雾蓝', emerald: '松绿', amber: '暖砂', rose: '藕粉', mono: '石墨' }[a]
+                    }
+                    aria-pressed={theme.accent === a}
+                    className={cn(
+                      'grid h-8 w-8 place-items-center rounded-full border-2 border-transparent bg-[var(--accent-solid)] text-white transition-colors',
+                      theme.accent === a && 'outline-2 outline-offset-2 outline-[var(--accent-solid)]',
+                    )}
+                    title={
+                      { 'cyan-violet': '雾蓝', emerald: '松绿', amber: '暖砂', rose: '藕粉', mono: '石墨' }[a]
+                    }
+                  >
+                    {theme.accent === a && <CircleCheck size={16} strokeWidth={1.5} />}
+                  </button>
                 ))}
               </div>
             </div>
@@ -248,18 +322,41 @@ export default function SettingsPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="text-xs text-muted">
-              任务关联的远程主机,支持 user@主机名、user@IP 和可选的 :端口。连接档案归当前账号所有。
-              可填写 SSH 密码,或由部署者为当前账号配置独立密钥。
+              任务关联的远程主机,支持 user@主机名、user@IP 和可选的 :端口。连接档案归当前账号所有。 可填写 SSH
+              密码,或由部署者为当前账号配置独立密钥。
             </div>
             {servers.length > 0 && (
               <div className="space-y-1.5">
                 {servers.map((s) => (
-                  <div key={s.id} className="flex items-center gap-2 rounded-xl border border-[var(--border)] px-3 py-2">
+                  <div
+                    key={s.id}
+                    className="flex items-center gap-2 rounded-xl border border-[var(--border)] px-3 py-2"
+                  >
                     <Server className="h-3.5 w-3.5 shrink-0 text-muted" />
                     <span className="min-w-0 shrink-0 truncate text-sm">{s.name}</span>
                     <code className="tabular min-w-0 flex-1 truncate text-[11px] text-muted">{s.host}</code>
-                    {s.passwordSet && <Badge variant="warning" className="shrink-0 !text-[9px]">密码</Badge>}
-                    <button className="shrink-0 text-xs text-muted underline" onClick={() => { setEditingServer(s.id); setServerName(s.name); setServerHost(s.host); setServerPassword(''); }}>
+                    {s.passwordSet && (
+                      <Badge variant="warning" className="shrink-0 !text-[9px]">
+                        密码
+                      </Badge>
+                    )}
+                    <button
+                      className="shrink-0 text-xs text-muted underline disabled:opacity-40"
+                      disabled={auth.phase !== 'authed' || connectionCheck?.busy}
+                      onClick={() => void checkConnection(s.id)}
+                      aria-label={`测试连接 ${s.name}`}
+                    >
+                      测试
+                    </button>
+                    <button
+                      className="shrink-0 text-xs text-muted underline"
+                      onClick={() => {
+                        setEditingServer(s.id);
+                        setServerName(s.name);
+                        setServerHost(s.host);
+                        setServerPassword('');
+                      }}
+                    >
                       {s.registered === false ? '重新配置' : '配置'}
                     </button>
                     <button
@@ -292,18 +389,37 @@ export default function SettingsPage() {
                 type="password"
                 value={serverPassword}
                 onChange={(e) => setServerPassword(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && void addServer()}
-                placeholder="登录密码(可选;免密钥已配就留空)"
+                onKeyDown={(e) => !isComposing(e) && e.key === 'Enter' && void addServer()}
+                placeholder="SSH 登录密码（已配置独立密钥时可留空）"
                 className="h-8 flex-1 text-xs"
               />
-              <Button size="sm" variant="secondary" className="h-8 shrink-0" disabled={auth.phase !== 'authed' || serverBusy || !serverName.trim() || !serverHost.trim()} onClick={() => void addServer()}>
+              <Button
+                size="sm"
+                variant="secondary"
+                className="h-8 shrink-0"
+                disabled={auth.phase !== 'authed' || serverBusy || !serverName.trim() || !serverHost.trim()}
+                onClick={() => void addServer()}
+              >
                 <Plus className="h-3.5 w-3.5" /> {editingServer ? '保存' : '添加'}
               </Button>
             </div>
             <div className="text-[10px] text-muted/60">
-              SSH 密码在服务端加密保存,不进入任务同步或 JSON 导出。{auth.phase !== 'authed' && ' 请先登录以配置远程连接。'}
+              SSH 密码在服务端加密保存,不进入任务同步或 JSON 导出。
+              {auth.phase !== 'authed' && ' 请先登录以配置远程连接。'}
             </div>
-            {serverError && <p role="alert" className="text-xs text-[var(--danger)]">{serverError}</p>}
+            {serverError && (
+              <p role="alert" className="text-xs text-[var(--danger)]">
+                {serverError}
+              </p>
+            )}
+            {connectionCheck && (
+              <p
+                role={connectionCheck.failed ? 'alert' : 'status'}
+                className={cn('text-xs', connectionCheck.failed ? 'text-[var(--danger)]' : 'text-muted')}
+              >
+                {servers.find((server) => server.id === connectionCheck.id)?.name}：{connectionCheck.message}
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -317,7 +433,8 @@ export default function SettingsPage() {
           <CardContent>
             <div className="flex items-center justify-between gap-3">
               <div className="text-xs text-muted">
-                番茄结束/日程提醒。{notifSupported() ? '浏览器通知' : '此环境不支持通知(iPhone PWA 需 HTTPS 安装)'}
+                番茄结束/日程提醒。
+                {notifSupported() ? '浏览器通知' : '此环境不支持通知(iPhone PWA 需 HTTPS 安装)'}
               </div>
               <Button
                 size="sm"
@@ -376,8 +493,22 @@ export default function SettingsPage() {
             </div>
             <div className="flex items-center justify-between rounded-xl border border-[var(--border)] px-3 py-2 text-xs">
               <span className="text-muted">同步状态</span>
-              <Badge variant={auth.syncStatus === 'online' ? 'success' : auth.syncStatus === 'connecting' ? 'warning' : 'default'}>
-                {auth.phase === 'local' ? '未登录(本地)' : auth.syncStatus === 'online' ? '在线' : auth.syncStatus === 'connecting' ? '连接中' : '离线'}
+              <Badge
+                variant={
+                  auth.syncStatus === 'online'
+                    ? 'success'
+                    : auth.syncStatus === 'connecting'
+                      ? 'warning'
+                      : 'default'
+                }
+              >
+                {auth.phase === 'local'
+                  ? '未登录(本地)'
+                  : auth.syncStatus === 'online'
+                    ? '在线'
+                    : auth.syncStatus === 'connecting'
+                      ? '连接中'
+                      : '离线'}
               </Badge>
             </div>
           </CardContent>

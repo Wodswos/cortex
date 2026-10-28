@@ -2,7 +2,7 @@
 /**
  * 生成 PWA 图标(无 ImageMagick 依赖,纯 Node PNG 编码)。
  * 512 母版超采样 → 盒式降采样出 192/180/32;输出 apps/web/public/icons/。
- * 图案:135° 渐变(cyan→violet)圆角方 + 白色闪电(多边形光栅化)。
+ * 图案:雾蓝圆角方 + 白色勾选,与 favicon 和侧栏品牌一致。
  */
 import { deflateSync } from 'node:zlib';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -59,11 +59,8 @@ function encodePNG(width, height, rgba) {
 const SS = 4; // 超采样
 const SIZE = 512;
 
-// 闪电多边形(归一化 0..1 坐标)
-const BOLT = [
-  [0.585, 0.08], [0.30, 0.55], [0.47, 0.55], [0.40, 0.92],
-  [0.72, 0.42], [0.53, 0.42], [0.66, 0.08],
-];
+// 勾选多边形(归一化 0..1 坐标)
+const CHECK = [[0.24, 0.47], [0.42, 0.65], [0.72, 0.31], [0.79, 0.37], [0.43, 0.76], [0.18, 0.53]];
 function inPoly(px, py, poly) {
   let inside = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -93,13 +90,8 @@ for (let y = 0; y < SIZE; y++) {
         const dy = py / SS - cy;
         const inRounded = dx * dx + dy * dy <= radius * radius;
         if (!inRounded) continue;
-        // 135° 渐变
-        const t = (px / SS + py / SS) / (2 * SIZE);
-        let cr = 34 + (139 - 34) * t;
-        let cg = 211 + (92 - 211) * t;
-        let cb = 238 + (246 - 238) * t;
-        // 闪电(白色)
-        if (inPoly(px / SS / SIZE, py / SS / SIZE, BOLT)) {
+        let cr = 83, cg = 117, cb = 180;
+        if (inPoly(px / SS / SIZE, py / SS / SIZE, CHECK)) {
           cr = 255; cg = 255; cb = 255;
         }
         r += cr; g += cg; b += cb; a += 255;

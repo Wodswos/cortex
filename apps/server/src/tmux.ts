@@ -6,7 +6,7 @@ import { writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { WebSocketServer, WebSocket } from 'ws';
-import { sshArgs, shellQuote, type SshConnection } from './connections';
+import { sshArgs, shellQuote, sshCredentialError, type SshConnection } from './connections';
 import { originAllowed, upgradeUrl, type WsIdentity } from './security';
 
 export const SESSION_RE = /^[\w.:@$=-]{1,128}$/;
@@ -23,6 +23,8 @@ function sshEnvironment(connection: SshConnection): [NodeJS.ProcessEnv, () => vo
 
 /** No shell locally, no host-provided config, agent or shared identity. */
 export async function sshRun(connection: SshConnection, command: string): Promise<{ code: number; stdout: string; stderr: string }> {
+  const credentialError = sshCredentialError(connection);
+  if (credentialError) return { code: -1, stdout: '', stderr: credentialError };
   const count = activeCommands.get(connection.userId) ?? 0;
   if (count >= 4 || [...activeCommands.values()].reduce((a, b) => a + b, 0) >= 32) {
     return { code: -1, stdout: '', stderr: 'SSH 请求过多,请稍后重试' };
@@ -119,6 +121,8 @@ export function setupTmux(
             const message = !binary ? JSON.parse(data.toString()) as { type?: unknown } : null;
             if (message?.type !== 'start') return ws.close(1008, 'invalid start message');
             clearTimeout(startup);
+            const credentialError = sshCredentialError(connection);
+            if (credentialError) return fail(credentialError);
             const environment = sshEnvironment(connection);
             dispose = environment[1];
             const args = ['-tt', ...sshArgs(connection)];

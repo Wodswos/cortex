@@ -93,6 +93,13 @@ afterAll(async () => {
 });
 
 describe('authenticated HTTP / WebSocket integration', () => {
+  it('reports missing account credentials instead of claiming there are no tmux sessions', async () => {
+    await request('/api/servers/no-credentials', a.cookie, { name: 'unconfigured', host: 'alice@host.invalid' }, 'PUT');
+    const result = await request('/api/tmux/sessions', a.cookie, { serverId: 'no-credentials' });
+    expect(result.status).toBe(422);
+    expect(await result.json()).toMatchObject({ error: expect.stringContaining('未配置 SSH 登录凭据') });
+    expect((await request('/api/tmux/sessions', b.cookie, { serverId: 'no-credentials' })).status).toBe(404);
+  });
   it('rejects unauthenticated terminal requests, foreign origins and cross-account profile use', async () => {
     expect((await request('/api/tmux/sessions', '', { host: 'someone-else.invalid' })).status).toBe(401);
     expect((await request('/api/tmux/sessions', a.cookie, { host: 'host.invalid' }, 'POST', { Origin: 'https://foreign.invalid' })).status).toBe(403);

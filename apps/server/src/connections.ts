@@ -68,3 +68,9 @@ export function sshArgs(connection: SshConnection): string[] {
 }
 
 export function shellQuote(value: string): string { return `'${value.replace(/'/g, `'\\''`)}'`; }
+
+export function sshCredentialError(connection: SshConnection): string | null {
+  return connection.password || ['id_ed25519', 'id_rsa'].some((name) => existsSync(join(connection.sshDir, name)))
+    ? null
+    : '未配置 SSH 登录凭据：请在设置中保存此连接的密码，或配置当前账号的独立 SSH 私钥。';
+}

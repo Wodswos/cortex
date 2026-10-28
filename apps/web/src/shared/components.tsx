@@ -1,36 +1,42 @@
 import React, { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
 import { Check, Folder, X } from 'lucide-react';
 import { cn, Badge } from '@cortex/ui';
 import {
-  EventKind, Task, Tag, dayKeyOf, addDays, fmtDuration, Priority,
-  PRIORITY_META, PRIORITY_ORDER, priorityOf, taskViewStatus,
+  EventKind,
+  Task,
+  Tag,
+  dayKeyOf,
+  addDays,
+  fmtDuration,
+  Priority,
+  PRIORITY_META,
+  PRIORITY_ORDER,
+  priorityOf,
+  taskViewStatus,
 } from '@cortex/core';
 
-/** 圆形勾选(完成动效) */
-export function TaskCheckbox({ done, onChange, className }: { done: boolean; onChange: () => void; className?: string }) {
+/** A quiet visual mark with a larger independent pointer target. */
+export function TaskCheckbox({
+  done,
+  onChange,
+  className,
+}: {
+  done: boolean;
+  onChange: () => void;
+  className?: string;
+}) {
   return (
     <button
-      onClick={(e) => {
-        e.stopPropagation();
+      role="checkbox"
+      aria-checked={done}
+      aria-label={done ? '标记未完成' : '完成'}
+      onClick={(event) => {
+        event.stopPropagation();
         onChange();
       }}
-      aria-label={done ? '标记未完成' : '完成'}
-      className={cn(
-        'group relative flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full border-2 transition-all active:scale-90',
-        done
-          ? 'gradient-bg border-transparent text-white'
-          : 'border-[var(--border-strong)] text-transparent hover:border-[color-mix(in_srgb,var(--accent-from)_70%,transparent)]',
-        className,
-      )}
+      className={cn('task-check', className)}
     >
-      <Check className="h-3.5 w-3.5" strokeWidth={3} />
-      {!done && (
-        <motion.span
-          className="absolute inset-0 rounded-full opacity-0 group-hover:opacity-100"
-          style={{ boxShadow: '0 0 12px color-mix(in srgb, var(--accent-from) 45%, transparent)' }}
-        />
-      )}
+      <span className="task-check-mark">{done && <Check size={11} strokeWidth={1.8} />}</span>
     </button>
   );
 }
@@ -41,14 +47,27 @@ export function DueBadge({ task, now = new Date() }: { task: Task; now?: Date })
   const todayKey = dayKeyOf(now);
   const key = dayKeyOf(d);
   const overdue = task.status !== 'done' && task.dueAt < new Date(now).setHours(0, 0, 0, 0);
-  const label = key === todayKey ? '今天' : key === dayKeyOf(addDays(now, 1)) ? '明天' : `${d.getMonth() + 1}/${d.getDate()}`;
-  const time = d.getHours() !== 0 || d.getMinutes() !== 0 ? ` ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : '';
+  const label =
+    key === todayKey
+      ? '今天'
+      : key === dayKeyOf(addDays(now, 1))
+        ? '明天'
+        : `${d.getMonth() + 1}/${d.getDate()}`;
+  const time =
+    d.getHours() !== 0 || d.getMinutes() !== 0
+      ? ` ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+      : '';
   return (
-    <Badge variant={overdue ? 'danger' : key === todayKey ? 'warning' : 'default'}>
+    <span
+      className={cn(
+        'shrink-0 text-[11px]',
+        overdue ? 'text-[var(--danger)]' : key === todayKey ? 'text-[var(--accent-solid)]' : 'text-muted',
+      )}
+    >
       {label}
       {time}
       {overdue && ' · 逾期'}
-    </Badge>
+    </span>
   );
 }
 
@@ -76,7 +95,10 @@ export function SubtreeProgress({ done, total }: { done: number; total: number }
   return (
     <span className="inline-flex items-center gap-1 text-[10px] text-muted">
       <span className="relative h-1 w-8 overflow-hidden rounded-full bg-[var(--border)]">
-        <span className="absolute inset-y-0 left-0 gradient-bg" style={{ width: `${(done / total) * 100}%` }} />
+        <span
+          className="absolute inset-y-0 left-0 gradient-bg"
+          style={{ width: `${(done / total) * 100}%` }}
+        />
       </span>
       {done}/{total}
     </span>
@@ -84,10 +106,10 @@ export function SubtreeProgress({ done, total }: { done: number; total: number }
 }
 
 export const EVENT_KIND_STYLE: Record<EventKind, { label: string; color: string; dim: string }> = {
-  focus: { label: '专注', color: '#22d3ee', dim: 'rgba(34,211,238,0.14)' },
-  meeting: { label: '会议', color: '#a78bfa', dim: 'rgba(167,139,250,0.14)' },
-  personal: { label: '个人', color: '#34d399', dim: 'rgba(52,211,153,0.14)' },
-  routine: { label: '例行', color: '#fbbf24', dim: 'rgba(251,191,36,0.14)' },
+  focus: { label: '专注', color: '#5375b4', dim: 'rgba(83,117,180,0.10)' },
+  meeting: { label: '会议', color: '#8b76ab', dim: 'rgba(139,118,171,0.10)' },
+  personal: { label: '个人', color: '#618576', dim: 'rgba(97,133,118,0.10)' },
+  routine: { label: '例行', color: '#9f845c', dim: 'rgba(159,132,92,0.10)' },
 };
 
 /** 优先级固定色(滴答清单惯例:红 P0 / 橙 P1 / 蓝 P2 / 灰 P3),不随 accent 主题变 */
@@ -112,7 +134,13 @@ export function PriorityDot({ task }: { task: Task }) {
 
 /** 优先级选择器:P0~P3 一段式,与四象限(重要×紧急)联动。
  *  选中项整块填充该优先级自己的颜色(而不是只描一圈边)。 */
-export function PriorityPicker({ value: priority, onChange }: { value: Priority; onChange: (p: Priority) => void }) {
+export function PriorityPicker({
+  value: priority,
+  onChange,
+}: {
+  value: Priority;
+  onChange: (p: Priority) => void;
+}) {
   return (
     <div className="grid grid-cols-4 gap-1.5">
       {PRIORITY_ORDER.map((p) => {
@@ -128,11 +156,7 @@ export function PriorityPicker({ value: priority, onChange }: { value: Priority;
               'flex flex-col items-center gap-1 rounded-lg border py-1.5 transition-all',
               active ? 'border-transparent text-white shadow-sm' : 'text-muted hover:text-foreground',
             )}
-            style={
-              active
-                ? { background: color, borderColor: color }
-                : { borderColor: 'var(--border)' }
-            }
+            style={active ? { background: color, borderColor: color } : { borderColor: 'var(--border)' }}
           >
             <span
               className="h-1.5 w-6 rounded-full"
@@ -148,10 +172,26 @@ export function PriorityPicker({ value: priority, onChange }: { value: Priority;
 
 /** 节点类型切换:TODO 任务(可完成) ↔ 结构节点(分组/主题,无完成态)。
  *  右击菜单和详情面板共用;转换后各视图渲染随之不同(列表/甘特无勾选框等)。 */
-export function KindToggle({ value, onChange }: { value: 'todo' | 'node'; onChange: (k: 'todo' | 'node') => void }) {
+export function KindToggle({
+  value,
+  onChange,
+}: {
+  value: 'todo' | 'node';
+  onChange: (k: 'todo' | 'node') => void;
+}) {
   const opts: { k: 'todo' | 'node'; label: string; icon: React.ReactNode; hint: string }[] = [
-    { k: 'todo', label: 'TODO 任务', icon: <Check className="h-3.5 w-3.5" />, hint: '可勾选完成、有状态/优先级/时间' },
-    { k: 'node', label: '结构节点', icon: <Folder className="h-3.5 w-3.5" />, hint: '分组/主题容器,无完成态与排期' },
+    {
+      k: 'todo',
+      label: 'TODO 任务',
+      icon: <Check className="h-3.5 w-3.5" />,
+      hint: '可勾选完成、有状态/优先级/时间',
+    },
+    {
+      k: 'node',
+      label: '结构节点',
+      icon: <Folder className="h-3.5 w-3.5" />,
+      hint: '分组/主题容器,无完成态与排期',
+    },
   ];
   return (
     <div className="grid grid-cols-2 gap-1.5">
@@ -165,7 +205,9 @@ export function KindToggle({ value, onChange }: { value: 'todo' | 'node'; onChan
             onClick={() => onChange(k)}
             className={cn(
               'flex items-center justify-center gap-1.5 rounded-lg border py-1.5 text-[11px] transition-all',
-              active ? 'gradient-bg border-transparent text-white shadow-sm' : 'text-muted hover:text-foreground',
+              active
+                ? 'gradient-bg border-transparent text-white shadow-sm'
+                : 'text-muted hover:text-foreground',
             )}
             style={active ? undefined : { borderColor: 'var(--border)' }}
           >
@@ -319,7 +361,10 @@ export function StatusBadge({ task }: { task: Task }) {
     default: 'text-muted',
   };
   return (
-    <span className={cn('inline-flex shrink-0 items-center gap-1 text-[10px]', text[s.tone])} title={`状态:${s.label}(按完成/开始/截止自动判断)`}>
+    <span
+      className={cn('inline-flex shrink-0 items-center gap-1 text-[10px]', text[s.tone])}
+      title={`状态:${s.label}(按完成/开始/截止自动判断)`}
+    >
       <span className={cn('h-1.5 w-1.5 rounded-full', dot[s.tone])} />
       {s.label}
     </span>

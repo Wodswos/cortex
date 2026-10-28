@@ -12,3 +12,4 @@ export * from './quadrant';
 export * from './status';
 export * from './gallery';
 export * from './validation';
+export * from './work';

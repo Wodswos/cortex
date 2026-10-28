@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { Zap, LogIn, UserPlus, HardDrive } from 'lucide-react';
+import { Check, LogIn, UserPlus, HardDrive } from 'lucide-react';
 import { Button, Input, Badge, Spinner } from '@cortex/ui';
 import { useAuth } from '@/app/auth';
 
@@ -45,7 +45,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center gap-3">
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl gradient-bg shadow-[0_8px_32px_-8px_color-mix(in_srgb,var(--accent-from)_70%,transparent)]">
-            <Zap className="h-8 w-8 text-white" />
+            <Check className="h-8 w-8 text-white" />
           </div>
           <h1 className="text-xl font-semibold">Cortex</h1>
           <p className="text-xs text-muted">local-first · 多端同步 · 你的效能中枢</p>

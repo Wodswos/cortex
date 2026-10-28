@@ -143,8 +143,10 @@ export function subtreeProgress(taskId: string, children: Map<string | null, Tas
     const t = stack.pop()!;
     if (visited.has(t.id)) continue;
     visited.add(t.id);
-    total++;
-    if (t.status === 'done') done++;
+    if (!isStructural(t)) {
+      total++;
+      if (t.status === 'done') done++;
+    }
     for (const c of children.get(t.id) ?? []) stack.push(c);
   }
   return { done, total };

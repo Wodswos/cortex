@@ -3,17 +3,17 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '../utils';
 
 const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-2 rounded-lg font-medium whitespace-nowrap transition-all outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:pointer-events-none disabled:opacity-50 active:scale-[0.97] select-none',
+  'inline-flex items-center justify-center gap-2 rounded-lg font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:pointer-events-none disabled:opacity-50 select-none',
   {
     variants: {
       variant: {
-        primary:
-          'gradient-bg text-white shadow-[0_2px_16px_-2px_color-mix(in_srgb,var(--accent-from)_45%,transparent)] hover:brightness-110',
+        primary: 'bg-[var(--accent-solid)] text-white hover:brightness-95',
         secondary: 'glass text-foreground hover:border-[var(--border-strong)]',
         ghost: 'text-muted hover:text-foreground hover:bg-[var(--surface)]',
         outline:
           'border border-[var(--border-strong)] text-foreground hover:border-[color-mix(in_srgb,var(--accent-from)_50%,transparent)]',
-        danger: 'bg-[var(--danger)]/15 text-[var(--danger)] border border-[var(--danger)]/30 hover:bg-[var(--danger)]/25',
+        danger:
+          'bg-[var(--danger)]/15 text-[var(--danger)] border border-[var(--danger)]/30 hover:bg-[var(--danger)]/25',
         link: 'text-[var(--accent-from)] underline-offset-4 hover:underline',
       },
       size: {

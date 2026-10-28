@@ -1,17 +1,63 @@
 import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import {
-  ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, Handle, Position, SelectionMode,
-  useNodesState, useEdgesState, useReactFlow, BaseEdge, type Node, type Edge, type NodeProps, type EdgeProps,
+  ReactFlow,
+  ReactFlowProvider,
+  Background,
+  Controls,
+  MiniMap,
+  Handle,
+  Position,
+  SelectionMode,
+  useNodesState,
+  useEdgesState,
+  useReactFlow,
+  BaseEdge,
+  type Node,
+  type Edge,
+  type NodeProps,
+  type EdgeProps,
 } from '@xyflow/react';
-import { Crosshair, ChevronDown, ChevronRight, Eye, EyeOff, Check, Maximize2 } from 'lucide-react';
-import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import {
+  Crosshair,
+  ChevronDown,
+  ChevronRight,
+  Eye,
+  EyeOff,
+  Check,
+  Maximize2,
+  HelpCircle,
+} from 'lucide-react';
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
 import { SortableContext, useSortable, horizontalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import '@xyflow/react/dist/style.css';
 import { cn, Badge } from '@cortex/ui';
 import {
-  Task, activeTasks, buildChildrenMap, subtreeProgress, quadrantOf, newOrder, gapTooSmall, sortSiblings, canReparent, fullyDoneIds, QuadrantKey, isStructural,
+  Task,
+  activeTasks,
+  buildChildrenMap,
+  quadrantOf,
+  newOrder,
+  gapTooSmall,
+  sortSiblings,
+  canReparent,
+  fullyDoneIds,
+  QuadrantKey,
+  isStructural,
+  descendantsOf,
+  workSignals,
+  workProgress,
+  taskContextIds,
+  WORK_FOCUS,
+  type WorkFocus,
 } from '@cortex/core';
 import { useCortex, useCortexData } from '@cortex/crdt';
 import { useUI } from '@/state/ui';
@@ -22,6 +68,16 @@ import { TaskCheckbox } from '@/shared/components';
 const ROW_GAP = 28;
 const COL_GAP = 64;
 const NODE_H = 44;
+// Non-interactive handles mark the exact node boundary. React Flow's default handles
+// protrude beyond it, which leaves gaps beside cards and overlaps structural lines.
+const HANDLE_STYLE: React.CSSProperties = {
+  opacity: 0,
+  width: 0,
+  height: 0,
+  minWidth: 0,
+  minHeight: 0,
+  border: 0,
+};
 
 // 语义色走 CSS 变量:随设置里的强调色/主题切换(mono 时自动转灰阶)
 const QUAD_COLOR: Record<QuadrantKey, string> = {
@@ -39,9 +95,8 @@ const EDGE_TYPE: Record<'curve' | 'straight' | 'step', string> = {
   straight: 'straight',
   step: 'tree',
 };
-/** 连线粗细随层级收细:第一层最粗(主干 4),每深一层 −1,最细 1.5。
- *  除粗细外全图连线完全同款(同色/同形态/同线帽)—— 层级感只靠粗细表达,不靠花样 */
-const edgeWidth = (depth: number) => Math.max(1.5, 5 - depth);
+/** Use one neutral stroke throughout, including the segment beneath structural labels. */
+const edgeWidth = (_depth: number) => 1.5;
 
 /**
  * XMind 式层级树(右侧扇出、根在左):按节点物理尺寸排布,同层纵向堆叠、按列横向错开,
@@ -64,7 +119,8 @@ function tidyTreeLayout(
 
   // 前序:根垂直居中,子级向右一列、自顶向下堆叠
   const place = (task: Task, x: number, y: number) => {
-    pos.set(task.id, { x, y });
+    // The layout works in centerlines; React Flow positions use the top-left corner.
+    pos.set(task.id, { x, y: y - NODE_H / 2 });
     const kids = kidsOf(task.id);
     if (kids.length === 0) return;
     const childX = x + nodeWidth(task) + COL_GAP;
@@ -92,7 +148,8 @@ function tidyTreeLayout(
 let measureCtx: CanvasRenderingContext2D | null | undefined;
 let uiFont: string | null = null;
 const fontOf = (px: number, weight = '400') => {
-  if (!uiFont && typeof document !== 'undefined') uiFont = getComputedStyle(document.body).fontFamily || 'system-ui';
+  if (!uiFont && typeof document !== 'undefined')
+    uiFont = getComputedStyle(document.body).fontFamily || 'system-ui';
   return `${weight} ${px}px ${uiFont ?? 'system-ui'}, sans-serif`;
 };
 function textWidth(s: string, font: string): number {
@@ -143,6 +200,8 @@ interface NodeData extends Record<string, unknown> {
   task: Task;
   progress: { done: number; total: number };
   hasChildren: boolean;
+  signalLabel?: string;
+  attention?: boolean;
   /** 行内编辑标题 */
   editing: boolean;
   /** 开始编辑时预置的起始字符(从一个按键触发的情况) */
@@ -177,8 +236,10 @@ function TaskNode({ data, selected }: NodeProps<Node<NodeData>>) {
     const focusSel = () => {
       const el = inputRef.current;
       if (!el) return;
-      el.focus();
-      el.select(); // 可见光标 + 全选:默认 Untitled 一眼可见、直接打字即替换
+      if (document.activeElement !== el) {
+        el.focus();
+        el.select();
+      }
     };
     focusSel();
     const r = requestAnimationFrame(focusSel);
@@ -195,50 +256,60 @@ function TaskNode({ data, selected }: NodeProps<Node<NodeData>>) {
   return (
     <div
       className={cn(
-        'group relative flex items-center transition-all',
-        structural
-          ? 'h-11' // 标签形态:占满布局高度,常态无框无底;连线锚在竖直中线,文字悬在中线上方
-          : 'gap-2 rounded-xl px-3 py-2 text-sm backdrop-blur-md glass hover:glow-border',
+        'group relative flex items-center transition-colors',
+        !structural && 'gap-2 rounded-md border bg-[var(--background)] px-3 text-sm',
         !structural && selected && 'glow-border',
         editing && !structural && 'ring-2 ring-[var(--accent-from)] bg-[var(--surface-solid)]',
         task.status === 'done' && 'opacity-50',
       )}
-      style={structural
-        ? {
-            // 子元素全是绝对定位,容器自身撑不出宽度;不给宽度的话左右 Handle 会挤在
-            // 同一点上,ReactFlow 连不出任何线。显式取布局同款宽度,连线/子列起点都对齐
-            width: nodeWidth(task),
-          }
-        : {
-            // 卡片同样显式定宽:真实 DOM 宽 = 布局宽(nodeWidth 实测文字宽),
-            // 子列走廊(COL_GAP)不再被超长标题吃掉 —— 卡片宽过假设时布局照旧把
-            // 子列排在 64px 外,真实却只剩几px,折线/曲线全在窄缝里打架
-            width: nodeWidth(task),
-            // 选中时加粗加光晕,而不是换色(换色会让人分不清"选中的是谁"和"哪个更紧急")
-            borderColor: accent,
-            borderWidth: selected ? 2 : 1.5,
-            boxShadow: selected ? `0 0 0 3px color-mix(in srgb, ${accent} 22%, transparent)` : undefined,
-            ...(dropHint === 'child'
-              ? { outline: '2px dashed var(--accent-from)', outlineOffset: 3, borderRadius: 12 }
-              : dropHint
-                ? {
-                    outline: '2px solid var(--accent-from)',
-                    outlineOffset: 3,
-                    borderRadius: 12,
-                    borderTop: dropHint === 'after' ? '3px solid var(--accent-from)' : undefined,
-                    borderBottom: dropHint === 'before' ? '3px solid var(--accent-from)' : undefined,
-                  }
-                : {}),
-          }}
+      style={
+        structural
+          ? {
+              // 子元素全是绝对定位,容器自身撑不出宽度;不给宽度的话左右 Handle 会挤在
+              // 同一点上,ReactFlow 连不出任何线。显式取布局同款宽度,连线/子列起点都对齐
+              width: nodeWidth(task),
+              height: NODE_H,
+            }
+          : {
+              // 卡片同样显式定宽:真实 DOM 宽 = 布局宽(nodeWidth 实测文字宽),
+              // 子列走廊(COL_GAP)不再被超长标题吃掉 —— 卡片宽过假设时布局照旧把
+              // 子列排在 64px 外,真实却只剩几px,折线/曲线全在窄缝里打架
+              width: nodeWidth(task),
+              // Cards, labels and the virtual root share the layout's centerline,
+              // including on touch screens where the checkbox has a larger hit area.
+              height: NODE_H,
+              // 选中时加粗加光晕,而不是换色(换色会让人分不清"选中的是谁"和"哪个更紧急")
+              borderColor: selected ? 'var(--accent-solid)' : 'var(--border-strong)',
+              borderWidth: 1,
+              boxShadow: undefined,
+              ...(dropHint === 'child'
+                ? { outline: '2px dashed var(--accent-from)', outlineOffset: 3, borderRadius: 12 }
+                : dropHint
+                  ? {
+                      outline: '2px solid var(--accent-from)',
+                      outlineOffset: 3,
+                      borderRadius: 12,
+                      borderTop: dropHint === 'after' ? '3px solid var(--accent-from)' : undefined,
+                      borderBottom: dropHint === 'before' ? '3px solid var(--accent-from)' : undefined,
+                    }
+                  : {}),
+            }
+      }
     >
-      {/* 连线穿过本体:结构节点区域内补一段与连线同色同宽的横线,连线从标签下方完整穿过。
-          只画到左右锚点的话,标签底下是一段空缺,看着就像线被什么遮住了;
-          左右各探出 6px,与锚在 Handle 外缘的边路径无缝搭接(同色同宽,重叠不可见) */}
+      {data.signalLabel && !editing && (
+        <span
+          className="pointer-events-none absolute -top-5 left-1 text-[10px] font-medium"
+          style={{ color: data.attention ? 'var(--warning)' : 'var(--accent-solid)' }}
+        >
+          {data.signalLabel}
+        </span>
+      )}
+      {/* Structural lines meet the boundary handles without extending into adjacent edges. */}
       {structural && (
         <span
           data-structural-line
-          className="pointer-events-none absolute inset-x-[-6px] top-1/2 -translate-y-1/2 rounded-full"
-          style={{ height: lineWidth ?? 2.5, background: EDGE_COLOR, opacity: 0.9 }}
+          className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2"
+          style={{ height: lineWidth ?? 2.5, background: EDGE_COLOR, opacity: 1 }}
         />
       )}
       {/* 拖拽提示:中段=挂子,上/下沿=同级插前/插后(与列表三段式一致) */}
@@ -254,8 +325,19 @@ function TaskNode({ data, selected }: NodeProps<Node<NodeData>>) {
         </span>
       )}
       {/* 隐藏的连接锚点:让连线有明确起止点(缺了会连不出来);左侧入/右侧出,经典右向脑图 */}
-      <Handle type="target" position={Position.Left} isConnectable={false} style={{ opacity: 0 }} />
-      <Handle type="source" position={Position.Right} isConnectable={false} style={{ opacity: 0 }} />
+      <Handle
+        type="target"
+        position={Position.Left}
+        isConnectable={false}
+        // Absolute offsets start at the padding box; include a card's 1px border.
+        style={{ ...HANDLE_STYLE, left: structural ? 0 : -1 }}
+      />
+      <Handle
+        type="source"
+        position={Position.Right}
+        isConnectable={false}
+        style={{ ...HANDLE_STYLE, right: structural ? 0 : -1 }}
+      />
       {/* 折叠钮:有直接子级才显示;stopPropagation 避免触发选中/拖动 */}
       {hasChildren && (
         <button
@@ -289,12 +371,12 @@ function TaskNode({ data, selected }: NodeProps<Node<NodeData>>) {
       {editing ? (
         <input
           ref={inputRef}
-          autoFocus
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={finish}
           onKeyDown={(e) => {
             e.stopPropagation();
+            if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
             if (e.key === 'Enter') {
               finish();
               onRefocus?.(); // 回车提交后把焦点还给容器,再按回车 = 再新建下一个
@@ -323,7 +405,9 @@ function TaskNode({ data, selected }: NodeProps<Node<NodeData>>) {
             // (缝 4px:第一层穿线粗 4px 半高 2px,标签底到线面还留 2px)
             bottom: 'calc(50% + 4px)',
             // 拖放落点提示挪到标签上(容器本体是无形的,框它没有意义)
-            ...(dropHint ? { outline: '2px dashed var(--accent-from)', outlineOffset: 3, borderRadius: 8 } : {}),
+            ...(dropHint
+              ? { outline: '2px dashed var(--accent-from)', outlineOffset: 3, borderRadius: 8 }
+              : {}),
           }}
         >
           <span className="max-w-[150px] truncate">{task.title || 'Untitled'}</span>
@@ -334,7 +418,13 @@ function TaskNode({ data, selected }: NodeProps<Node<NodeData>>) {
           )}
         </span>
       ) : (
-        <span className={cn('min-w-0 flex-1 truncate', task.status === 'done' && 'line-through', task.id === VIRTUAL_ROOT_ID && 'font-semibold')}>
+        <span
+          className={cn(
+            'min-w-0 flex-1 truncate',
+            task.status === 'done' && 'line-through',
+            task.id === VIRTUAL_ROOT_ID && 'font-semibold',
+          )}
+        >
           {task.title || 'Untitled'}
         </span>
       )}
@@ -363,7 +453,15 @@ function TreeStepEdge({ id, sourceX, sourceY, targetX, targetY, style }: EdgePro
 const EDGE_TYPES = { tree: TreeStepEdge };
 
 /** 导图:任务森林的层级树。根在左、子向右;单击选中,双击或直接打字改标题,拖到别的节点上 = 重挂层级。 */
-function MindMapInner({ rootTaskId }: { rootTaskId: string | null }) {
+function MindMapInner({
+  rootTaskId,
+  focusMode,
+  onFocusChange,
+}: {
+  rootTaskId: string | null;
+  focusMode: WorkFocus;
+  onFocusChange: (mode: WorkFocus) => void;
+}) {
   const data = useCortexData();
   const store = useCortex();
   const collapsed = useUI((s) => s.collapsed);
@@ -393,6 +491,13 @@ function MindMapInner({ rootTaskId }: { rootTaskId: string | null }) {
   const [relayoutTick, bumpRelayout] = useReducer((x: number) => x + 1, 0);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [sideOpen, setSideOpen] = useState(false);
+  const [newTaskIds, setNewTaskIds] = useState<string[]>([]);
+  const [focusRevision, refreshFocus] = useReducer((value: number) => value + 1, 0);
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(timer);
+  }, []);
   /** 拖拽中的落点提示:{目标节点, 语义}(child=挂子 / before|after=同级插前插后) */
   const [dropHint, setDropHint] = useState<{ id: string; mode: 'child' | 'before' | 'after' } | null>(null);
   /** 某节点编辑态的起始字符(类型触发时预置;普通编辑为 null) */
@@ -411,7 +516,7 @@ function MindMapInner({ rootTaskId }: { rootTaskId: string | null }) {
             ? {
                 ...n,
                 draggable: !editing,
-                data: { ...n.data, editing, seedChar: editing ? seedById.current[id] ?? null : null },
+                data: { ...n.data, editing, seedChar: editing ? (seedById.current[id] ?? null) : null },
               }
             : n,
         ),
@@ -441,6 +546,49 @@ function MindMapInner({ rootTaskId }: { rootTaskId: string | null }) {
   }, [data.tasks, hideDone]);
   const childrenMap = useMemo(() => buildChildrenMap(tasks), [tasks]);
   const byId = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
+  const progress = useMemo(() => workProgress(tasks), [tasks]);
+  const hiddenRoots = data.settings.hiddenRoots ?? [];
+  const scopedTasks = useMemo(() => {
+    if (rootTaskId) {
+      const ids = descendantsOf(rootTaskId, childrenMap).add(rootTaskId);
+      return tasks.filter((task) => ids.has(task.id));
+    }
+    const hidden = new Set<string>();
+    for (const id of hiddenRoots) {
+      hidden.add(id);
+      for (const child of descendantsOf(id, childrenMap)) hidden.add(child);
+    }
+    return tasks.filter((task) => !hidden.has(task.id));
+  }, [tasks, childrenMap, rootTaskId, hiddenRoots]);
+  const signals = useMemo(
+    () => workSignals(scopedTasks, data.events, now, data.settings.weekStartsOn),
+    [scopedTasks, data.events, now, data.settings.weekStartsOn],
+  );
+  const matches = focusMode === 'all' ? null : signals[focusMode];
+  const emptyCurrent = focusMode === 'current' && matches?.size === 0 && newTaskIds.length === 0;
+  const contextIds = useMemo(
+    () =>
+      matches && !emptyCurrent
+        ? taskContextIds(tasks, [...matches, ...newTaskIds, ...(selectedTask ? [selectedTask.id] : [])])
+        : null,
+    [tasks, matches, emptyCurrent, newTaskIds, selectedTask],
+  );
+  const contextKey = contextIds ? [...contextIds].sort().join(',') : '*';
+  useEffect(() => {
+    setNewTaskIds([]);
+    setSelectedTask(null);
+    setSideOpen(false);
+    if (!matches) return;
+    const paths = taskContextIds(tasks, matches);
+    useUI.setState((state) => {
+      if (![...paths].some((id) => state.collapsed[id])) return state;
+      const next = { ...state.collapsed };
+      for (const id of paths) delete next[id];
+      return { collapsed: next };
+    });
+    // Only an explicit focus/root change expands paths; ordinary edits keep the viewport stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusMode, rootTaskId, focusRevision]);
 
   /** 令某节点进入行内标题编辑;seed = 起始按键字符(无则沿用现有标题)。
    *  节点已在图中 → 直接 patch;新建节点尚未入图 → 记入 pendingEdit,等布局产出后补齐。 */
@@ -491,21 +639,28 @@ function MindMapInner({ rootTaskId }: { rootTaskId: string | null }) {
   }, [collapsed, childrenMap]);
 
   const kidsOf = useCallback(
-    (id: string | null) => (childrenMap.get(id) ?? []).filter((c) => !hiddenIds.has(c.id)),
-    [childrenMap, hiddenIds],
+    (id: string | null) =>
+      (childrenMap.get(id) ?? []).filter(
+        (c) => !hiddenIds.has(c.id) && (!contextIds || contextIds.has(c.id)),
+      ),
+    [childrenMap, hiddenIds, contextIds],
   );
 
   /** 可见的根(虚拟根或指定任务);「全部」模式下应用用户的根任务显隐设置 */
-  const hiddenRoots = data.settings.hiddenRoots ?? [];
   const rootChildren = useMemo(() => {
     const visible = (list: Task[]) =>
-      list.filter((t) => !hiddenIds.has(t.id) && (rootTaskId != null || !hiddenRoots.includes(t.id)));
+      list.filter(
+        (t) =>
+          !hiddenIds.has(t.id) &&
+          (!contextIds || contextIds.has(t.id)) &&
+          (rootTaskId != null || !hiddenRoots.includes(t.id)),
+      );
     if (rootTaskId) {
       const root = byId.get(rootTaskId);
       return root ? visible([root]) : visible(childrenMap.get(null) ?? []);
     }
     return visible(childrenMap.get(null) ?? []);
-  }, [rootTaskId, byId, childrenMap, hiddenIds, hiddenRoots]);
+  }, [rootTaskId, byId, childrenMap, hiddenIds, hiddenRoots, contextIds]);
 
   /** 布局输入:「全部」时以虚拟真根为唯一根,顶层任务全部连到它上面;单根时直接用该根 */
   const layoutRoots = useMemo(
@@ -519,10 +674,16 @@ function MindMapInner({ rootTaskId }: { rootTaskId: string | null }) {
 
   /** 层级树坐标 → ReactFlow nodes/edges */
   const applyLayout = useCallback(() => {
+    if (!rootChildren.length) {
+      setNodes([]);
+      setEdges([]);
+      return;
+    }
     const goal = tidyTreeLayout(layoutRoots, layoutKids);
     // 选中自携带:新 nodes 继承旧 nodes 的 selected;新建节点走一次性排他选中
     const prevSelected = new Set(nodesRef.current.filter((n) => n.selected).map((n) => n.id));
     const exclusive = selectOnCreateRef.current;
+    const previousNodes = new Map(nodesRef.current.map((node) => [node.id, node]));
     const nextNodes: Node<NodeData>[] = [];
     const nextEdges: Edge[] = [];
     const visit = (task: Task, parentId: string | null, depth: number) => {
@@ -531,14 +692,28 @@ function MindMapInner({ rootTaskId }: { rootTaskId: string | null }) {
       nextNodes.push({
         id: task.id,
         type: 'task',
+        draggable: !previousNodes.get(task.id)?.data.editing,
         position: { x: g.x, y: g.y },
         selected: exclusive ? task.id === exclusive : prevSelected.has(task.id),
         data: {
           task,
-          progress: subtreeProgress(task.id, childrenMap),
+          progress: progress.get(task.id) ?? { done: 0, total: 0 },
           hasChildren: (childrenMap.get(task.id)?.length ?? 0) > 0,
-          editing: false,
-          seedChar: null,
+          signalLabel: [
+            signals.doing.has(task.id) ? '进行中' : '',
+            signals.overdue.has(task.id)
+              ? '逾期'
+              : signals.unscheduled.has(task.id)
+                ? '重要未排期'
+                : signals.week.has(task.id) && !signals.doing.has(task.id)
+                  ? '本周安排'
+                  : '',
+          ]
+            .filter(Boolean)
+            .join(' · '),
+          attention: signals.overdue.has(task.id) || signals.unscheduled.has(task.id),
+          editing: previousNodes.get(task.id)?.data.editing ?? false,
+          seedChar: seedById.current[task.id] ?? null,
           lineWidth: edgeWidth(depth), // 结构节点穿线粗细 = 连入它的连线粗细
           dropHint: undefined,
           onCommit: (title: string) => commitTitle(task.id, title),
@@ -554,7 +729,7 @@ function MindMapInner({ rootTaskId }: { rootTaskId: string | null }) {
           style: {
             stroke: EDGE_COLOR, // 统一中性色:不再按任务优先级/结构类型各自染色
             strokeWidth: edgeWidth(depth), // 粗细随层级收细,此外全图同款
-            opacity: 0.9,
+            opacity: 1,
             strokeLinecap: 'round',
           },
         });
@@ -567,17 +742,27 @@ function MindMapInner({ rootTaskId }: { rootTaskId: string | null }) {
     setEdges(nextEdges);
     // 注意:这里不自动 fitView —— 新增/删除节点只重排,视图保持稳定;
     // 视口校正只在挂载与切换根任务时做(见下方 effect)
-  }, [layoutRoots, layoutKids, rootChildren, childrenMap, edgeStyle, setNodes, setEdges, commitTitle, refocusWrapper]);
+  }, [
+    layoutRoots,
+    layoutKids,
+    rootChildren,
+    childrenMap,
+    edgeStyle,
+    setNodes,
+    setEdges,
+    commitTitle,
+    refocusWrapper,
+    progress,
+    signals,
+  ]);
 
   // 校正视口的情形:初次挂载、切换根任务、根任务显隐变化、折叠/展开子树、已完成显隐切换(图变小自动收拢视口);
   // 平时的增删改一律保持用户当前视图
-  const hiddenRootsKey = JSON.stringify(hiddenRoots);
-  const collapsedKey = JSON.stringify(collapsed);
   useEffect(() => {
-    const t = setTimeout(() => fitView({ padding: 0.18, duration: 250 }), 80);
+    const t = setTimeout(() => fitView({ padding: 0.18, duration: 0 }), 80);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rootTaskId, fitView, hiddenRootsKey, collapsedKey, hideDone]);
+  }, [rootTaskId, focusMode, focusRevision, fitView]);
 
   // 数据/折叠状态变化 → 重布局(tasks 引用变化即触发,保证软删后的节点从图中移除)
   useEffect(() => {
@@ -587,6 +772,8 @@ function MindMapInner({ rootTaskId }: { rootTaskId: string | null }) {
     rootChildren.length,
     childrenMap.size,
     tasks,
+    contextKey,
+    signals,
     relayoutTick,
     edgeStyle,
     JSON.stringify(rootChildren.map((t) => t.id + t.status + t.title)),
@@ -599,9 +786,7 @@ function MindMapInner({ rootTaskId }: { rootTaskId: string | null }) {
 
   /** 三段式落点判定(与列表一致):拖动节点中心落在目标节点
    *  上沿外=插它前面 · 下沿外=插它后面 · 中段=挂为它的子任务 */
-  const computeDrop = (
-    node: Node,
-  ): { targetId: string | null; mode: 'child' | 'before' | 'after' } => {
+  const computeDrop = (node: Node): { targetId: string | null; mode: 'child' | 'before' | 'after' } => {
     const hits = getIntersectingNodes(node).filter((n) => n.id !== node.id);
     const t = hits[0];
     if (!t) return { targetId: null, mode: 'child' };
@@ -719,6 +904,8 @@ function MindMapInner({ rootTaskId }: { rootTaskId: string | null }) {
       urgent: parent?.urgent ?? false,
     });
     if (created) {
+      setNewTaskIds((ids) => [...ids, created.id]);
+      if (collapsed[parentId]) useUI.getState().toggleCollapsed(parentId);
       store.stopUndoCapture(); // 新建 = 一个撤销单元
       selectOnCreateRef.current = created.id; // 新建即选中:紧接着 Delete 删的就是它
       setSelectedTask(created);
@@ -742,6 +929,7 @@ function MindMapInner({ rootTaskId }: { rootTaskId: string | null }) {
       urgent: task.urgent ?? false,
     });
     if (created) {
+      setNewTaskIds((ids) => [...ids, created.id]);
       store.stopUndoCapture(); // 新建 = 一个撤销单元
       selectOnCreateRef.current = created.id; // 新建即选中:紧接着 Delete 删的就是它
       setSelectedTask(created);
@@ -761,6 +949,7 @@ function MindMapInner({ rootTaskId }: { rootTaskId: string | null }) {
   // TAB=加子,Enter=加同级;某个可打印字符 → 直接进入该节点标题的编辑(首键即输入)。
   // 若该节点已在编辑态但输入框丢了焦点,再打字会重新播种(seedChar 变化)并重新聚焦。
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
     if (!selectedTask) return;
     const t = e.target as HTMLElement | null;
     if (t?.closest('input, textarea, select, button, a')) return;
@@ -806,144 +995,236 @@ function MindMapInner({ rootTaskId }: { rootTaskId: string | null }) {
   const selectedCount = nodes.filter((n) => n.selected && n.id !== VIRTUAL_ROOT_ID).length;
 
   return (
-    <div ref={wrapperRef} tabIndex={-1} onKeyDown={handleKeyDown} className="relative h-full outline-none">
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onSelectionChange={({ nodes: sel }) => {
-          // 选中事实由 RF 的标志位承载,这里只做跟随:非单选(框选多台/清空)时收起
-          // 详情面板。面板的打开只来自单击(onNodeClick),编辑/重排期间不会被顶开。
-          // RF 在重排后会用相同集合重发事件 —— 按内容去重,避免无谓的面板扰动。
-          const key = sel.map((n) => n.id).sort().join(',');
-          if (key === lastSelKeyRef.current) return;
-          lastSelKeyRef.current = key;
-          const real = sel.filter((n) => n.id !== VIRTUAL_ROOT_ID);
-          if (real.length !== 1) {
-            setSelectedTask(null);
-            setSideOpen(false);
-          }
-        }}
-        nodeTypes={NODE_TYPES}
-        edgeTypes={EDGE_TYPES}
-        selectionOnDrag
-        selectionMode={SelectionMode.Partial}
-        selectNodesOnDrag={false}
-        deleteKeyCode={null}
-        panOnDrag={[1, 2]}
-        panOnScroll
-        zoomOnScroll={false}
-        onNodeClick={(e, node) => {
-          // 点击来自节点内输入框(编辑标题选光标)时不接管:否则把焦点还给画布容器
-          // 会 blur 输入框 → 触发提交退出编辑
-          if ((e.target as HTMLElement | null)?.closest('input, textarea, select')) return;
-          // 虚拟真根不可选中/编辑,点它 = 取消当前选中
-          if (node.id === VIRTUAL_ROOT_ID) {
-            setSelectedTask(null);
-            setSideOpen(false);
-            return;
-          }
-          handleSelect(node.id);
-          // 点击聚焦:平滑把该节点移到画面中心(保持当前缩放,不跳变)。
-          // 延迟一拍:若随后来了双击(进入编辑)则取消 —— 编辑中途画布平移会让
-          // 用户点向"文本原来的位置"而落空,失焦退出编辑。
-          if (centerTimer.current) clearTimeout(centerTimer.current);
-          const w = node.measured?.width ?? 160;
-          const h = node.measured?.height ?? 44;
-          centerTimer.current = setTimeout(() => {
-            setCenter(node.position.x + w / 2, node.position.y + h / 2, {
-              zoom: getZoom(),
-              duration: 350,
-            });
-          }, 260);
-        }}
-        onNodeDoubleClick={(_e, node) => {
-          if (node.id === VIRTUAL_ROOT_ID) return;
-          if (centerTimer.current) clearTimeout(centerTimer.current);
-          // 双击 = 行内编辑:只选中、不弹详情面板 —— 面板浮在画布右上角,
-          // 会盖住正在编辑的节点,点文本就变成点面板 → 失焦退出编辑
-          wrapperRef.current?.focus();
-          setSelectedTask(byId.get(node.id) ?? null);
-          setSideOpen(false);
-          beginEdit(node.id);
-        }}
-        onNodeContextMenu={(e, node) => {
-          e.preventDefault();
-          if (node.id === VIRTUAL_ROOT_ID) return;
-          handleSelect(node.id);
-          // 已多选(框选)时,右键操作作用于整批
-          // 右键时框选集合(>1)整批生效
-          const batch = nodesRef.current.filter((n) => n.selected && n.id !== node.id).map((n) => n.id);
-          openTaskMenu(node.id, e.clientX, e.clientY, batch.length > 0 ? [...batch, node.id] : undefined);
-        }}
-        onNodeDragStart={onNodeDragStart}
-        onNodeDrag={onNodeDrag}
-        onNodeDragStop={onNodeDragStop}
-        onPaneClick={() => {
-          setSelectedTask(null);
-          setSideOpen(false);
-        }}
-        onPaneContextMenu={(e) => e.preventDefault()}
-        fitView
-        minZoom={0.12}
-        maxZoom={2}
-        proOptions={{ hideAttribution: true }}
-        className={cn('[&_.react-flow__attribution]:hidden')}
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div
+        role="region"
+        className="shrink-0 border-b border-[var(--border)] px-4 py-2 md:px-6"
+        aria-label="工作概览"
       >
-        <Background gap={24} size={1} color="var(--border)" />
-        <Controls showInteractive={false} className="!glass-raised !rounded-xl !border-none" />
-        <MiniMap
-          pannable
-          zoomable
-          maskColor="rgba(0,0,0,0.55)"
-          style={{ background: 'var(--surface-solid)', border: '1px solid var(--border)', borderRadius: 12 }}
-        />
-      </ReactFlow>
-      {/* 回到全局视图:一键 fit 全图(单击节点会聚焦居中,用这个回来) */}
-      <button
-        onClick={() => fitView({ padding: 0.18, duration: 300 })}
-        className="absolute bottom-3 right-3 z-20 flex items-center gap-1.5 rounded-xl glass-raised px-3 py-1.5 text-xs text-muted shadow-lg transition-colors hover:text-foreground"
-        title="回到全局视图"
-      >
-        <Maximize2 className="h-3.5 w-3.5" /> 全局视图
-      </button>
-      {selectedCount > 0 && (
-        <div className="absolute bottom-12 right-3 z-20 flex items-center gap-2 rounded-xl glass-raised px-3 py-1.5 text-xs">
-          <span>已选 {selectedCount} 项</span>
-          <button
-            onClick={() => setNodes((ns) => ns.map((n) => ({ ...n, selected: false })))}
-            className="text-muted hover:text-foreground"
-          >
-            清除
-          </button>
-        </div>
-      )}
-      <TaskInspector
-        task={sideOpen ? selectedTask : null}
-        onAddChild={selectedTask ? () => addChild(selectedTask.id) : () => {}}
-        onClose={() => setSideOpen(false)}
-      />
-      <div className="pointer-events-none absolute bottom-3 left-3 max-w-[560px] rounded-xl glass-raised px-3 py-2 text-[10px] leading-relaxed text-muted">
-        <div className="pointer-events-auto mb-1.5 flex items-center gap-1">
-          <span className="mr-0.5">连线</span>
-          {([['curve', '舒缓'], ['straight', '直线'], ['step', '折线']] as const).map(([k, label]) => (
+        <div className="flex gap-1 overflow-x-auto pb-1 text-xs">
+          {(
+            [
+              ['current', '当前工作', signals.current.size, '进行中或本周有安排的未完成任务'],
+              ['doing', '进行中', signals.doing.size, '已明确标为进行中的任务'],
+              ['week', '本周', signals.week.size, '本周的开始/截止区间或关联日程'],
+              ['overdue', '逾期', signals.overdue.size, '截止时间已过且尚未完成'],
+              ['unscheduled', '重要未排期', signals.unscheduled.size, 'P0/P1 任务，尚无日期或未来日程'],
+              ['all', '全图', null, '查看所有任务与分支'],
+            ] as const
+          ).map(([mode, label, count, hint]) => (
             <button
-              key={k}
-              onClick={() => store.updateSettings({ mindEdgeStyle: k })}
+              key={mode}
+              type="button"
+              aria-label={`${label}${count != null ? ` ${count}` : ''}`}
+              aria-pressed={focusMode === mode}
+              onClick={() => {
+                onFocusChange(mode);
+                refreshFocus();
+              }}
+              title={hint}
               className={cn(
-                'rounded-full px-2 py-0.5 transition-colors',
-                edgeStyle === k ? 'gradient-bg text-white' : 'text-muted hover:text-foreground',
+                'shrink-0 rounded-md px-2.5 py-1.5 transition-colors',
+                focusMode === mode
+                  ? 'bg-[var(--selection)] font-medium text-[var(--accent-solid)]'
+                  : 'text-muted hover:bg-[var(--surface)] hover:text-foreground',
               )}
-              title={`连接线样式:${label}`}
             >
               {label}
+              {count != null && <span className="ml-1.5 tabular-nums">{count}</span>}
             </button>
           ))}
         </div>
-        <div>
-          单击选中 · 双击/直接打字改标题 · 拖到节点上 = 挂到它下面 · 拖到空白 = 同级上下调序 · 拖到「全部任务」= 升为根 · 节点右上角 = 折叠/展开子级 · 左键拖 = 框选 · 双指滑动/滚轮 = 平移 · ⌘/Ctrl+滚轮·捏合 = 缩放 · 选中后按 Tab 加子 / Enter 加同级 · Delete 删除所选
-        </div>
+        <p className="pt-1 text-[10px] text-muted">
+          {emptyCurrent
+            ? '暂无进行中或本周安排，先展示全图。'
+            : focusMode === 'all'
+              ? '查看全部分支；点击上方数字可定位当前工作和待检查项。'
+              : '保留任务所属的项目路径；进度按完整项目计算。'}
+        </p>
+      </div>
+      <div
+        ref={wrapperRef}
+        tabIndex={-1}
+        onKeyDown={handleKeyDown}
+        className="relative min-h-0 flex-1 outline-none"
+      >
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onSelectionChange={({ nodes: sel }) => {
+            // 选中事实由 RF 的标志位承载,这里只做跟随:非单选(框选多台/清空)时收起
+            // 详情面板。面板的打开只来自单击(onNodeClick),编辑/重排期间不会被顶开。
+            // RF 在重排后会用相同集合重发事件 —— 按内容去重,避免无谓的面板扰动。
+            const key = sel
+              .map((n) => n.id)
+              .sort()
+              .join(',');
+            if (key === lastSelKeyRef.current) return;
+            lastSelKeyRef.current = key;
+            const real = sel.filter((n) => n.id !== VIRTUAL_ROOT_ID);
+            if (real.length !== 1) {
+              setSelectedTask(null);
+              setSideOpen(false);
+            }
+          }}
+          nodeTypes={NODE_TYPES}
+          edgeTypes={EDGE_TYPES}
+          selectionOnDrag
+          selectionMode={SelectionMode.Partial}
+          selectNodesOnDrag={false}
+          deleteKeyCode={null}
+          panOnDrag={[1, 2]}
+          panOnScroll
+          zoomOnScroll={false}
+          onNodeClick={(e, node) => {
+            // 点击来自节点内输入框(编辑标题选光标)时不接管:否则把焦点还给画布容器
+            // 会 blur 输入框 → 触发提交退出编辑
+            if ((e.target as HTMLElement | null)?.closest('input, textarea, select')) return;
+            // 虚拟真根不可选中/编辑,点它 = 取消当前选中
+            if (node.id === VIRTUAL_ROOT_ID) {
+              setSelectedTask(null);
+              setSideOpen(false);
+              return;
+            }
+            handleSelect(node.id);
+            // 点击聚焦:平滑把该节点移到画面中心(保持当前缩放,不跳变)。
+            // 延迟一拍:若随后来了双击(进入编辑)则取消 —— 编辑中途画布平移会让
+            // 用户点向"文本原来的位置"而落空,失焦退出编辑。
+            if (centerTimer.current) clearTimeout(centerTimer.current);
+            const w = node.measured?.width ?? 160;
+            const h = node.measured?.height ?? 44;
+            centerTimer.current = setTimeout(() => {
+              setCenter(node.position.x + w / 2, node.position.y + h / 2, {
+                zoom: getZoom(),
+                duration: 350,
+              });
+            }, 260);
+          }}
+          onNodeDoubleClick={(_e, node) => {
+            if (node.id === VIRTUAL_ROOT_ID) return;
+            if (centerTimer.current) clearTimeout(centerTimer.current);
+            // 双击 = 行内编辑:只选中、不弹详情面板 —— 面板浮在画布右上角,
+            // 会盖住正在编辑的节点,点文本就变成点面板 → 失焦退出编辑
+            wrapperRef.current?.focus();
+            setSelectedTask(byId.get(node.id) ?? null);
+            setSideOpen(false);
+            beginEdit(node.id);
+          }}
+          onNodeContextMenu={(e, node) => {
+            e.preventDefault();
+            if (node.id === VIRTUAL_ROOT_ID) return;
+            handleSelect(node.id);
+            // 已多选(框选)时,右键操作作用于整批
+            // 右键时框选集合(>1)整批生效
+            const batch = nodesRef.current.filter((n) => n.selected && n.id !== node.id).map((n) => n.id);
+            openTaskMenu(node.id, e.clientX, e.clientY, batch.length > 0 ? [...batch, node.id] : undefined);
+          }}
+          onNodeDragStart={onNodeDragStart}
+          onNodeDrag={onNodeDrag}
+          onNodeDragStop={onNodeDragStop}
+          onPaneClick={() => {
+            setSelectedTask(null);
+            setSideOpen(false);
+          }}
+          onPaneContextMenu={(e) => e.preventDefault()}
+          fitView
+          minZoom={0.12}
+          maxZoom={2}
+          proOptions={{ hideAttribution: true }}
+          className={cn('[&_.react-flow__attribution]:hidden')}
+        >
+          <Background gap={24} size={1} color="var(--border)" />
+          <Controls
+            position="top-left"
+            showInteractive={false}
+            className="!glass-raised !rounded-md !border-none"
+          />
+          <MiniMap
+            pannable
+            zoomable
+            className="!hidden lg:!block"
+            maskColor="rgba(112,119,131,0.12)"
+            style={{
+              width: 140,
+              height: 90,
+              bottom: 52,
+              right: 12,
+              background: 'var(--surface-solid)',
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+            }}
+          />
+        </ReactFlow>
+        {/* 回到全局视图:一键 fit 全图(单击节点会聚焦居中,用这个回来) */}
+        <button
+          onClick={() => fitView({ padding: 0.18, duration: 300 })}
+          className="absolute bottom-3 right-3 z-20 flex items-center gap-1.5 rounded-xl glass-raised px-3 py-1.5 text-xs text-muted shadow-lg transition-colors hover:text-foreground"
+          title="回到全局视图"
+        >
+          <Maximize2 className="h-3.5 w-3.5" /> 全局视图
+        </button>
+        {selectedCount > 0 && (
+          <div className="absolute bottom-12 right-3 z-20 flex items-center gap-2 rounded-xl glass-raised px-3 py-1.5 text-xs">
+            <span>已选 {selectedCount} 项</span>
+            <button
+              onClick={() => setNodes((ns) => ns.map((n) => ({ ...n, selected: false })))}
+              className="text-muted hover:text-foreground"
+            >
+              清除
+            </button>
+          </div>
+        )}
+        <TaskInspector
+          task={sideOpen ? selectedTask : null}
+          onAddChild={selectedTask ? () => addChild(selectedTask.id) : () => {}}
+          onClose={() => setSideOpen(false)}
+        />
+        {!rootChildren.length && (
+          <div className="pointer-events-none absolute inset-0 grid place-items-center text-sm text-muted">
+            {focusMode === 'all' ? '还没有任务' : '没有符合条件的任务，可切回全图查看。'}
+          </div>
+        )}
+        <details className="absolute bottom-3 left-3 z-20 text-xs text-muted" aria-label="导图操作说明">
+          <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 shadow-sm">
+            <HelpCircle size={14} />
+            操作说明
+            <ChevronDown size={12} />
+          </summary>
+          <div className="absolute bottom-full left-0 mb-2 max-h-[60vh] w-[min(300px,calc(100vw-48px))] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--background)] p-4 shadow-lg">
+            <ul className="space-y-2 leading-relaxed">
+              <li>单击选中，双击编辑标题。</li>
+              <li>Tab 添加子任务，Enter 添加同级任务。</li>
+              <li>拖到节点上调整层级，拖到空白处调整同级顺序。</li>
+              <li>拖到“全部任务”可升为根任务。</li>
+              <li>左键框选；滚轮平移；Ctrl/⌘ + 滚轮缩放。</li>
+              <li>Delete 删除所选；Ctrl/⌘ + Z 撤销。</li>
+            </ul>
+            <div className="mt-4 flex items-center gap-1 border-t border-[var(--border)] pt-3">
+              <span className="mr-0.5">连线</span>
+              {(
+                [
+                  ['curve', '舒缓'],
+                  ['straight', '直线'],
+                  ['step', '折线'],
+                ] as const
+              ).map(([k, label]) => (
+                <button
+                  key={k}
+                  onClick={() => store.updateSettings({ mindEdgeStyle: k })}
+                  className={cn(
+                    'rounded-full px-2 py-0.5 transition-colors',
+                    edgeStyle === k ? 'gradient-bg text-white' : 'text-muted hover:text-foreground',
+                  )}
+                  title={`连接线样式:${label}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </details>
       </div>
     </div>
   );
@@ -951,7 +1232,9 @@ function MindMapInner({ rootTaskId }: { rootTaskId: string | null }) {
 
 /** 可拖拽排序的根任务标签:拖动 = 调整根顺序(与画布内拖动、列表视图全部一致) */
 function SortableRootChip({ task, active, onSelect }: { task: Task; active: boolean; onSelect: () => void }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: task.id,
+  });
   return (
     <button
       ref={setNodeRef}
@@ -976,9 +1259,19 @@ export function MindMapView() {
   const store = useCortex();
   const [params, setParams] = useSearchParams();
   // 根任务进 URL(?root=<id>):刷新/分享/回退都保留当前视图
-  const rootTaskId = params.get('root');
+  const rootTaskId = params.get('root') ?? params.get('project');
+  const focusParam = params.get('mindFocus');
+  const focusMode: WorkFocus = WORK_FOCUS.includes(focusParam as WorkFocus)
+    ? (focusParam as WorkFocus)
+    : 'current';
+  const setFocusMode = (mode: WorkFocus) => {
+    const next = new URLSearchParams(params);
+    next.set('mindFocus', mode);
+    setParams(next, { replace: true });
+  };
   const setRootTaskId = (id: string | null) => {
     const next = new URLSearchParams(params);
+    next.delete('project');
     if (id) next.set('root', id);
     else next.delete('root');
     setParams(next, { replace: true });
@@ -1024,8 +1317,8 @@ export function MindMapView() {
   };
 
   return (
-    <div className="relative h-full">
-      <div className="absolute left-4 top-0 z-10 flex items-center gap-1.5 pt-3 md:left-6">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="relative z-10 flex shrink-0 flex-wrap items-center gap-1.5 border-b border-[var(--border)] px-4 py-2 md:px-6">
         <button
           onClick={() => setRootTaskId(null)}
           className={cn(
@@ -1036,9 +1329,17 @@ export function MindMapView() {
           全部
         </button>
         <DndContext sensors={chipSensors} collisionDetection={closestCenter} onDragEnd={onChipDragEnd}>
-          <SortableContext items={visibleRoots.slice(0, 6).map((t) => t.id)} strategy={horizontalListSortingStrategy}>
+          <SortableContext
+            items={visibleRoots.slice(0, 6).map((t) => t.id)}
+            strategy={horizontalListSortingStrategy}
+          >
             {visibleRoots.slice(0, 6).map((t) => (
-              <SortableRootChip key={t.id} task={t} active={rootTaskId === t.id} onSelect={() => setRootTaskId(t.id)} />
+              <SortableRootChip
+                key={t.id}
+                task={t}
+                active={rootTaskId === t.id}
+                onSelect={() => setRootTaskId(t.id)}
+              />
             ))}
           </SortableContext>
         </DndContext>
@@ -1055,7 +1356,9 @@ export function MindMapView() {
             onClick={() => setPickerOpen((o) => !o)}
             className={cn(
               'flex items-center gap-1 rounded-full px-2 py-1 text-xs',
-              hiddenRoots.length > 0 ? 'glass text-[var(--accent-from)]' : 'glass text-muted hover:text-foreground',
+              hiddenRoots.length > 0
+                ? 'glass text-[var(--accent-from)]'
+                : 'glass text-muted hover:text-foreground',
             )}
             title="选择「全部」视图里要显示哪些根任务"
           >
@@ -1064,7 +1367,9 @@ export function MindMapView() {
           </button>
           {pickerOpen && (
             <div className="absolute left-0 top-full z-40 mt-1.5 max-h-[60vh] w-56 overflow-y-auto rounded-xl glass-raised p-1.5 shadow-xl">
-              <div className="px-2 py-1 text-[10px] text-muted">「全部」视图显示的根任务(取消勾选 = 该根及其整棵子树不在图中显示)</div>
+              <div className="px-2 py-1 text-[10px] text-muted">
+                「全部」视图显示的根任务(取消勾选 = 该根及其整棵子树不在图中显示)
+              </div>
               {roots.map((t) => {
                 const on = !hiddenRoots.includes(t.id);
                 return (
@@ -1091,7 +1396,7 @@ export function MindMapView() {
         </div>
       </div>
       <ReactFlowProvider>
-        <MindMapInner rootTaskId={rootTaskId} />
+        <MindMapInner rootTaskId={rootTaskId} focusMode={focusMode} onFocusChange={setFocusMode} />
       </ReactFlowProvider>
     </div>
   );

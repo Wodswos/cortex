@@ -22,30 +22,23 @@ export const SheetContent = React.forwardRef<
     /** 是否渲染深色遮罩(float 默认不渲染) */
     overlay?: boolean;
   }
->(({ className, children, side = 'right', title, overlay = side !== 'float', ...props }, ref) => (
+>(({ className, children, side = 'right', title, overlay = side === 'bottom', ...props }, ref) => (
   <DialogPrimitive.Portal>
-    {overlay && (
-      <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-black/55 backdrop-blur-[2px] data-[state=open]:animate-fade-up" />
-    )}
+    {overlay && <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-black/55 backdrop-blur-[2px] " />}
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        'fixed z-50 glass-raised outline-none',
-        side === 'right' &&
-          'inset-y-0 right-0 w-full max-w-[488px] border-l data-[state=open]:animate-fade-up',
-        side === 'left' &&
-          'inset-y-0 left-0 w-full max-w-[320px] border-r data-[state=open]:animate-fade-up',
+        'fixed z-50 bg-[var(--background)] border-[var(--border)] outline-none',
+        side === 'right' && 'inset-y-0 right-0 w-full max-w-[380px] border-l ',
+        side === 'left' && 'inset-y-0 left-0 w-full max-w-[320px] border-r ',
         side === 'bottom' &&
-          'inset-x-0 bottom-0 max-h-[92vh] rounded-t-2xl border-t pb-[env(safe-area-inset-bottom)] data-[state=open]:animate-fade-up',
-        side === 'float' &&
-          'right-4 top-16 w-[min(420px,92vw)] rounded-2xl border data-[state=open]:animate-fade-up',
+          'inset-x-0 bottom-0 max-h-[92vh] rounded-t-2xl border-t pb-[env(safe-area-inset-bottom)] ',
+        side === 'float' && 'right-4 top-16 w-[min(420px,92vw)] rounded-2xl border ',
         className,
       )}
       {...props}
     >
-      {side === 'bottom' && (
-        <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-[var(--border-strong)]" />
-      )}
+      {side === 'bottom' && <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-[var(--border-strong)]" />}
       <div className="flex items-center justify-between px-4 pt-4 pb-2">
         <DialogPrimitive.Title className="text-sm font-semibold text-muted">
           {title ?? ''}

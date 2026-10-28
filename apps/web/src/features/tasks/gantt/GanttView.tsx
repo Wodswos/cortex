@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useSearchParams } from 'react-router';
 import { CalendarClock, ChevronRight, Minus, Plus, Folder } from 'lucide-react';
 import { cn } from '@cortex/ui';
 import {
@@ -89,9 +90,19 @@ export function GanttView() {
   const store = useCortex();
   const ui = useUI();
   const collapsed = useUI((s) => s.collapsed);
+  const [params] = useSearchParams();
+  const location = useLocation();
+  const scope = params.get('scope');
+  const weekStartsOn = data.settings.weekStartsOn;
   /** 时间窗口:默认本周(周一 → 周日) */
-  const [winStart, setWinStart] = useState(() => startOfWeek(new Date(), 1));
+  const [winStart, setWinStart] = useState(() => startOfWeek(new Date(), weekStartsOn));
   const [winDays, setWinDays] = useState(7);
+  useEffect(() => {
+    if (scope === 'week') {
+      setWinStart(startOfWeek(new Date(), weekStartsOn));
+      setWinDays(7);
+    }
+  }, [scope, weekStartsOn, location.key]);
   const [dragging, setDragging] = useState<BarDrag | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   /** 天宽缩放档位(1/2/4/8):放大后时间轴更细,才拖得动分钟 */
@@ -295,8 +306,8 @@ export function GanttView() {
     <div className="flex h-full min-h-0 flex-col">
       {/* 窗口选择:默认本周;预设 + 起止日期 + 缩放 */}
       <div className="flex shrink-0 flex-wrap items-center gap-2 px-4 py-3 md:px-6">
-        {preset('本周', () => { setWinStart(startOfWeek(new Date(), 1)); setWinDays(7); }, winDays === 7 && startOfDay(winStart).getTime() === startOfDay(startOfWeek(new Date(), 1)).getTime())}
-        {preset('下周', () => { setWinStart(addDays(startOfWeek(new Date(), 1), 7)); setWinDays(7); }, winDays === 7 && startOfDay(winStart).getTime() === startOfDay(addDays(startOfWeek(new Date(), 1), 7)).getTime())}
+        {preset('本周', () => { setWinStart(startOfWeek(new Date(), weekStartsOn)); setWinDays(7); }, winDays === 7 && startOfDay(winStart).getTime() === startOfDay(startOfWeek(new Date(), weekStartsOn)).getTime())}
+        {preset('下周', () => { setWinStart(addDays(startOfWeek(new Date(), weekStartsOn), 7)); setWinDays(7); }, winDays === 7 && startOfDay(winStart).getTime() === startOfDay(addDays(startOfWeek(new Date(), weekStartsOn), 7)).getTime())}
         {preset('本月', () => { const n = new Date(); setWinStart(new Date(n.getFullYear(), n.getMonth(), 1)); setWinDays(new Date(n.getFullYear(), n.getMonth() + 1, 0).getDate()); }, false)}
         {preset('近 30 天', () => { setWinStart(startOfDay(new Date())); setWinDays(30); }, winDays === 30 && startOfDay(winStart).getTime() === startOfDay(new Date()).getTime())}
         <div className="flex items-center gap-1 text-xs text-muted">

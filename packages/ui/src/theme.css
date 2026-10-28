@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 /* Tailwind v4 自动探测只覆盖 CSS 入口所在工程的源码;本文件挂在 packages/ui,
    大量只出现在 ui 包里的工具类(Sheet 的 top-16/right-4 float 定位、max-w-[488px] 抽屉宽、
@@ -6,7 +6,7 @@
    (曾经的"浮窗看不见/右抽屉全屏"根因)。这里显式指向整个 monorepo。 */
 @source "../../../";
 
-/* dark-first:html 默认挂 .dark,浅色为二等公民 */
+/* Both color schemes share the same neutral surfaces and accent hierarchy. */
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* React Flow 背景网点(SVG)不能吃指针事件:框选/点空白取消选中等
@@ -19,47 +19,69 @@
 }
 
 :root {
-  --background: #f4f5f7;
-  --surface: rgba(255, 255, 255, 0.72);
+  --background: #ffffff;
+  --sidebar: #f7f8fa;
+  --selection: #edf2fc;
+  --calendar-grid: #e8ebf0;
+  --surface: #f5f6f8;
   --surface-solid: #ffffff;
-  --surface-raised: rgba(255, 255, 255, 0.9);
-  --foreground: #18181b;
-  --muted-foreground: #6b7280;
-  --border: rgba(24, 24, 27, 0.1);
-  --border-strong: rgba(24, 24, 27, 0.18);
-  --ring: rgba(34, 211, 238, 0.6);
-  --accent-from: #22d3ee;
-  --accent-to: #8b5cf6;
-  --accent-solid: #0891b2;
-  --danger: #f43f5e;
-  --success: #10b981;
-  --warning: #f59e0b;
-  --glow: 0 0 24px rgba(34, 211, 238, 0.25);
+  --surface-raised: #ffffff;
+  --foreground: #292c33;
+  --muted-foreground: #707783;
+  --border: #eceef2;
+  --border-strong: #d4d8df;
+  --ring: #557ac0;
+  --accent-from: #5375b4;
+  --accent-to: #5375b4;
+  --accent-solid: #5375b4;
+  --danger: #c65e64;
+  --success: #598675;
+  --warning: #ad8450;
+  --glow: none;
   color-scheme: light;
 }
 
 .dark {
-  --background: #09090f;
-  --surface: rgba(255, 255, 255, 0.04);
-  --surface-solid: #101018;
-  --surface-raised: rgba(20, 20, 30, 0.85);
-  --foreground: #f4f4f5;
-  --muted-foreground: #8b8b96;
+  --background: #1b1d21;
+  --sidebar: #17191d;
+  --selection: #293344;
+  --calendar-grid: #30333a;
+  --surface: #25282e;
+  --surface-solid: #202328;
+  --surface-raised: #25282e;
+  --foreground: #e4e6eb;
+  --muted-foreground: #969ca8;
   --border: rgba(255, 255, 255, 0.08);
   --border-strong: rgba(255, 255, 255, 0.16);
-  --ring: rgba(34, 211, 238, 0.6);
+  --ring: #557ac0;
   --danger: #fb7185;
   --success: #34d399;
   --warning: #fbbf24;
-  --glow: 0 0 32px rgba(34, 211, 238, 0.22);
+  --glow: none;
   color-scheme: dark;
 }
 
-/* 四套 accent(设置页可换) */
-[data-accent='cyan-violet'] { --accent-from: #22d3ee; --accent-to: #8b5cf6; --accent-solid: #0891b2; }
-[data-accent='emerald']     { --accent-from: #34d399; --accent-to: #0ea5e9; --accent-solid: #059669; }
-[data-accent='amber']       { --accent-from: #fbbf24; --accent-to: #f43f5e; --accent-solid: #d97706; }
-[data-accent='rose']        { --accent-from: #fb7185; --accent-to: #a78bfa; --accent-solid: #e11d48; }
+/* Color choices change color only; every choice uses the same geometry. */
+[data-accent='cyan-violet'] {
+  --accent-from: #5375b4;
+  --accent-to: #5375b4;
+  --accent-solid: #5375b4;
+}
+[data-accent='emerald'] {
+  --accent-from: #4e8274;
+  --accent-to: #4e8274;
+  --accent-solid: #4e8274;
+}
+[data-accent='amber'] {
+  --accent-from: #a47b47;
+  --accent-to: #a47b47;
+  --accent-solid: #a47b47;
+}
+[data-accent='rose'] {
+  --accent-from: #a76a7d;
+  --accent-to: #a76a7d;
+  --accent-solid: #a76a7d;
+}
 
 /* 黑白极简:浅色模式用近黑,深色模式用浅灰;并去掉背景光晕,保持克制 */
 [data-accent='mono'] {
@@ -73,7 +95,7 @@
   /* 中灰而非浅灰:gradient-bg 配 text-white 仍可读,深底上也有层次 */
   --accent-from: #52525b;
   --accent-to: #71717a;
-  --accent-solid: #e4e4e7;
+  --accent-solid: #73737e;
   --ring: rgba(228, 228, 231, 0.5);
 }
 [data-accent='mono'] body::before {
@@ -116,21 +138,6 @@
   --quad-eliminate-glow: var(--p3-glow);
 }
 
-/* mono 不只是换色,是「极简」风格:去毛玻璃模糊、实底面、小圆角、无阴影光晕 */
-[data-accent='mono'] .glass,
-[data-accent='mono'] .glass-raised {
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  background: var(--surface-solid);
-  box-shadow: none;
-}
-[data-accent='mono'] .rounded-2xl { border-radius: 10px; }
-[data-accent='mono'] .rounded-xl { border-radius: 8px; }
-[data-accent='mono'] .rounded-lg { border-radius: 6px; }
-[data-accent='mono'] button.rounded-full,
-[data-accent='mono'] a.rounded-full,
-[data-accent='mono'] span.rounded-full { border-radius: 8px; }
-
 @theme inline {
   --color-background: var(--background);
   --color-surface: var(--surface);
@@ -164,47 +171,27 @@ body {
   overscroll-behavior-y: none;
 }
 
-/* 科技感底噪:两团缓慢漂移的 accent 光晕 */
 body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  background:
-    radial-gradient(600px 400px at 8% -10%, color-mix(in srgb, var(--accent-from) 7%, transparent), transparent 70%),
-    radial-gradient(700px 500px at 100% 110%, color-mix(in srgb, var(--accent-to) 7%, transparent), transparent 70%);
+  display: none;
 }
 
 @utility glass {
   background: var(--surface);
   border: 1px solid var(--border);
-  backdrop-filter: blur(16px) saturate(1.4);
-  -webkit-backdrop-filter: blur(16px) saturate(1.4);
 }
-
 @utility glass-raised {
   background: var(--surface-raised);
-  border: 1px solid var(--border-strong);
-  backdrop-filter: blur(20px) saturate(1.5);
-  -webkit-backdrop-filter: blur(20px) saturate(1.5);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.07);
 }
-
 @utility glow-border {
-  border: 1px solid color-mix(in srgb, var(--accent-from) 35%, transparent);
-  box-shadow: var(--glow);
+  border: 1px solid var(--accent-solid);
 }
-
 @utility gradient-text {
-  background: linear-gradient(120deg, var(--accent-from), var(--accent-to));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--accent-solid);
 }
-
 @utility gradient-bg {
-  background: linear-gradient(120deg, var(--accent-from), var(--accent-to));
+  background: var(--accent-solid);
 }
 
 @utility tabular {
@@ -226,32 +213,176 @@ body::before {
 }
 
 @keyframes breathe {
-  0%, 100% { opacity: 0.55; }
-  50% { opacity: 1; }
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 @utility animate-breathe {
   animation: breathe 2.4s ease-in-out infinite;
 }
 
 @keyframes pulse-line {
-  0%, 100% { box-shadow: 0 0 4px color-mix(in srgb, var(--accent-from) 60%, transparent); }
-  50% { box-shadow: 0 0 14px color-mix(in srgb, var(--accent-from) 90%, transparent); }
+  0%,
+  100% {
+    box-shadow: 0 0 4px color-mix(in srgb, var(--accent-from) 60%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 14px color-mix(in srgb, var(--accent-from) 90%, transparent);
+  }
 }
 @utility animate-pulse-line {
   animation: pulse-line 2s ease-in-out infinite;
 }
 
 @keyframes fade-up {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 @utility animate-fade-up {
   animation: fade-up 0.22s ease-out both;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+.workspace-sidebar {
+  width: 224px;
+  background: var(--sidebar);
+  border-right: 1px solid var(--border);
+}
+.workspace-nav {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 38px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+.workspace-nav:hover {
+  background: var(--surface);
+  color: var(--foreground);
+}
+.workspace-nav[aria-current='page'] {
+  background: var(--selection);
+  color: var(--accent-solid);
+  font-weight: 500;
+}
+.workspace-nav svg {
+  width: 17px;
+  height: 17px;
+  stroke-width: 1.65;
+  flex-shrink: 0;
+}
+.workspace-section {
+  margin: 24px 12px 7px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+  letter-spacing: 0.05em;
+}
+.workspace-detail {
+  width: 320px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  background: var(--background);
+}
+.task-row {
+  min-height: 34px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+  border-radius: 0;
+}
+.task-check {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-foreground);
+}
+.task-check-mark {
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border: 1.25px solid var(--muted-foreground);
+  border-radius: 50%;
+  transition:
+    background-color 80ms,
+    border-color 80ms;
+}
+.task-check:hover .task-check-mark {
+  border-color: var(--accent-solid);
+}
+.task-check[aria-checked='true'] .task-check-mark {
+  background: var(--accent-solid);
+  border-color: var(--accent-solid);
+  color: white;
+}
+.calendar-month {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-rows: repeat(6, minmax(94px, 1fr));
+  min-height: 620px;
+  flex: 1;
+}
+.calendar-cell {
+  min-width: 0;
+  border-right: 1px solid var(--calendar-grid);
+  border-bottom: 1px solid var(--calendar-grid);
+  padding: 6px;
+}
+.calendar-cell:nth-child(7n) {
+  border-right: 0;
+}
+.calendar-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  min-height: 24px;
+  margin-top: 2px;
+  padding: 3px 5px;
+  border-radius: 4px;
+  font-size: 11px;
+  text-align: left;
+}
+.calendar-item:hover {
+  background: var(--selection);
+}
+@media (max-width: 767px) {
+  .calendar-month {
+    min-height: 540px;
+    grid-template-rows: repeat(6, minmax(78px, 1fr));
+  }
+  .calendar-cell {
+    padding: 3px;
+  }
+  .calendar-item {
+    font-size: 10px;
+    padding: 3px 1px;
+  }
+}
+@media (pointer: coarse) {
+  .task-check {
+    min-width: 36px;
+    min-height: 40px;
   }
 }

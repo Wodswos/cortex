@@ -14,18 +14,17 @@ interface ThemeState {
 function apply(mode: ThemeMode, accent: Accent): void {
   const el = document.documentElement;
   const dark =
-    mode === 'dark' ||
-    (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    mode === 'dark' || (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
   el.classList.toggle('dark', dark);
   el.dataset.accent = ACCENTS.includes(accent) ? accent : 'cyan-violet';
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute('content', dark ? '#09090f' : '#f4f5f7');
+  if (meta) meta.setAttribute('content', dark ? '#1b1d21' : '#ffffff');
 }
 
 export const useTheme = create<ThemeState>()(
   persist(
     () => ({
-      mode: 'dark' as ThemeMode,
+      mode: 'system' as ThemeMode,
       accent: 'cyan-violet' as Accent,
       setMode: (mode: ThemeMode) => {
         useTheme.setState({ mode });

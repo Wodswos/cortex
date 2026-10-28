@@ -26,9 +26,9 @@ export class ApiError extends Error {
   }
 }
 
-async function req<T>(path: string, init?: RequestInit): Promise<T> {
+async function req<T>(path: string, init?: RequestInit, timeoutMs = 8000): Promise<T> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   let res: Response;
   try { res = await fetch(path, {
     ...init,
@@ -108,6 +108,6 @@ export const api = {
   },
   removeServer(id: string): Promise<void> { return req(`/api/servers/${encodeURIComponent(id)}`, { method: 'DELETE' }); },
   tmux<T>(action: string, serverId: string, session?: string, extra: Record<string, unknown> = {}): Promise<T> {
-    return req(`/api/tmux/${action}`, { method: 'POST', body: JSON.stringify({ serverId, session, ...extra }) });
+    return req(`/api/tmux/${action}`, { method: 'POST', body: JSON.stringify({ serverId, session, ...extra }) }, 12000);
   },
 };

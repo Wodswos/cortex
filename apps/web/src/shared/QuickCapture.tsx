@@ -5,6 +5,7 @@ import { parseCapture } from '@cortex/core';
 import { useCortex } from '@cortex/crdt';
 import { useUI } from '../state/ui';
 import { fmtHM, addDays, startOfDay } from '@cortex/core';
+import { isComposing } from './ime';
 
 export function QuickCapture() {
   const open = useUI((s) => s.quickCaptureOpen);
@@ -26,10 +27,16 @@ export function QuickCapture() {
   const parsed = parseCapture(text || '');
 
   const saved = async () => {
-    setSaving(true); setSaveError('');
-    try { await store.flushPersistence(); setCount((c) => c + 1); }
-    catch (error) { setSaveError(`保存失败:${(error as Error).message}`); }
-    finally { setSaving(false); }
+    setSaving(true);
+    setSaveError('');
+    try {
+      await store.flushPersistence();
+      setCount((c) => c + 1);
+    } catch (error) {
+      setSaveError(`保存失败:${(error as Error).message}`);
+    } finally {
+      setSaving(false);
+    }
   };
   const submit = async () => {
     if (!text.trim() || saving) return;
@@ -54,7 +61,11 @@ export function QuickCapture() {
     const d = new Date(parsed.dueAt);
     const today = startOfDay(new Date()).getTime();
     const label =
-      d.getTime() < addDays(today, 1).getTime() ? '今天' : d.getTime() < addDays(today, 2).getTime() ? '明天' : `${d.getMonth() + 1}/${d.getDate()}`;
+      d.getTime() < addDays(today, 1).getTime()
+        ? '今天'
+        : d.getTime() < addDays(today, 2).getTime()
+          ? '明天'
+          : `${d.getMonth() + 1}/${d.getDate()}`;
     return `${label} ${fmtHM(parsed.dueAt)}`;
   };
 
@@ -67,6 +78,7 @@ export function QuickCapture() {
           disabled={saving}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
+            if (isComposing(e)) return;
             if (e.key === 'Enter') {
               e.preventDefault();
               void submit();
@@ -102,7 +114,11 @@ export function QuickCapture() {
           )}
           {text.trim() === '' && <span className="opacity-70">Enter 收集,连续录入不清弹窗 · Esc 关闭</span>}
           {saving && <span role="status">正在保存…</span>}
-          {saveError && <span role="alert">{saveError} <button onClick={() => void saved()}>重试保存</button></span>}
+          {saveError && (
+            <span role="alert">
+              {saveError} <button onClick={() => void saved()}>重试保存</button>
+            </span>
+          )}
           {!saving && !saveError && count > 0 && text.trim() === '' && (
             <span className="ml-auto inline-flex items-center gap-1 text-[var(--success)]">
               <Inbox className="h-3.5 w-3.5" />

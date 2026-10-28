@@ -12,7 +12,7 @@ export const SegmentedList = React.forwardRef<
   <TabsPrimitive.List
     ref={ref}
     className={cn(
-      'inline-flex items-center gap-0.5 rounded-xl glass p-0.5 no-scrollbar overflow-x-auto max-w-full',
+      'inline-flex items-center gap-0.5 rounded-md bg-[var(--surface)] p-0.5 no-scrollbar overflow-x-auto max-w-full',
       className,
     )}
     {...props}
@@ -27,9 +27,9 @@ export const SegmentedTrigger = React.forwardRef<
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      'whitespace-nowrap rounded-[10px] px-3 h-8 text-sm font-medium text-muted transition-all',
+      'whitespace-nowrap rounded-md px-3 h-8 text-sm font-medium text-muted transition-colors',
       'hover:text-foreground',
-      'data-[state=active]:gradient-bg data-[state=active]:text-white data-[state=active]:shadow-sm',
+      'data-[state=active]:bg-[var(--background)] data-[state=active]:text-foreground data-[state=active]:shadow-sm',
       className,
     )}
     {...props}

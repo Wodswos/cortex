@@ -10,7 +10,7 @@ import { randomBytes } from 'node:crypto';
 import { DB } from './db';
 import { setupSync } from './sync';
 import { setupTmux, sshRun, SESSION_RE } from './tmux';
-import { Connections, parseSshHost, shellQuote } from './connections';
+import { Connections, parseSshHost, shellQuote, sshCredentialError } from './connections';
 import { hashPassword, verifyPassword, RateLimit, originAllowed, upgradeUrl, type WsIdentity } from './security';
 
 const PORT = Number(process.env.PORT ?? 30090);
@@ -157,6 +157,8 @@ app.post('/api/tmux/:action', async (c) => {
   const body = await json(c);
   const connection = connections.resolve(userId, text(body?.serverId));
   if (!connection) return c.json({ error: '服务器档案不存在' }, 404);
+  const credentialError = sshCredentialError(connection);
+  if (credentialError) return c.json({ error: credentialError }, 422);
   const action = c.req.param('action');
   const session = text(body?.session);
   if (action !== 'sessions' && !SESSION_RE.test(session)) return c.json({ error: '无效的 session 名' }, 400);

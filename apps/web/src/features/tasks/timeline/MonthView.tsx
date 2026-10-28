@@ -1,108 +1,197 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { cn } from '@cortex/ui';
-import {
-  addDays, startOfWeek, dayKeyOf, WEEKDAY_ZH, activeTasks,
-} from '@cortex/core';
-import { useCortexData } from '@cortex/crdt';
+import { addDays, startOfWeek, dayKeyOf, WEEKDAY_ZH, isStructural, calendarDaysBetween } from '@cortex/core';
+import { useCortex, useCortexData } from '@cortex/crdt';
+import { useUI } from '@/state/ui';
 import { EVENT_KIND_STYLE } from '@/shared/components';
 
-export function MonthView({ date, onDateChange }: { date: Date; onDateChange: (d: Date) => void }) {
+type CalendarItem = { id: string; type: 'task' | 'event'; title: string; done: boolean; color: string };
+export function MonthView({
+  date,
+  onDateChange,
+  onCreateTask,
+}: {
+  date: Date;
+  onDateChange: (d: Date) => void;
+  onCreateTask?: (dueAt: number, event: React.MouseEvent) => void;
+}) {
   const data = useCortexData();
-  const monthStart = new Date(date.getFullYear(), date.getMonth(), 1);
-  const gridStart = startOfWeek(monthStart, 1);
-  const days = useMemo(() => Array.from({ length: 42 }, (_, i) => addDays(gridStart, i)), [gridStart]);
-  const todayKey = dayKeyOf(new Date());
-
-  const eventsByDay = useMemo(() => {
-    const map = new Map<string, { total: number; done: number; items: { title: string; color: string; done: boolean }[] }>();
-    for (const e of data.events) {
-      if (e.deletedAt) continue;
-      const key = dayKeyOf(e.start);
-      const cell = map.get(key) ?? { total: 0, done: 0, items: [] };
-      cell.total++;
-      if (e.completed) cell.done++;
-      if (cell.items.length < 3) {
-        cell.items.push({ title: e.title, color: EVENT_KIND_STYLE[e.kind].color, done: !!e.completed });
-      }
-      map.set(key, cell);
+  const store = useCortex();
+  const selectTask = useUI((s) => s.selectTask);
+  const [dropDay, setDropDay] = useState<string | null>(null);
+  const [message, setMessage] = useState('');
+  const first = startOfWeek(new Date(date.getFullYear(), date.getMonth(), 1), data.settings.weekStartsOn);
+  const firstKey = dayKeyOf(first);
+  const days = useMemo(
+    () => Array.from({ length: 42 }, (_, i) => addDays(new Date(`${firstKey}T00:00:00`), i)),
+    [firstKey],
+  );
+  const weekdayLabels =
+    data.settings.weekStartsOn === 0 ? [WEEKDAY_ZH[6], ...WEEKDAY_ZH.slice(0, 6)] : WEEKDAY_ZH;
+  const items = useMemo(() => {
+    const result = new Map<string, CalendarItem[]>();
+    const append = (key: string, item: CalendarItem) => result.set(key, [...(result.get(key) ?? []), item]);
+    for (const event of data.events) {
+      if (event.deletedAt) continue;
+      for (const day of days)
+        if (event.start < addDays(day, 1).getTime() && event.end > day.getTime())
+          append(dayKeyOf(day), {
+            id: event.id,
+            type: 'event',
+            title: event.title,
+            done: !!event.completed,
+            color: EVENT_KIND_STYLE[event.kind].color,
+          });
     }
-    return map;
-  }, [data.events]);
-
-  const dueByDay = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const t of activeTasks(data.tasks)) {
-      if (t.dueAt == null || t.status === 'done') continue;
-      const key = dayKeyOf(t.dueAt);
-      map.set(key, (map.get(key) ?? 0) + 1);
+    for (const task of data.tasks) {
+      if (
+        task.deletedAt ||
+        task.status === 'archived' ||
+        task.status === 'inbox' ||
+        isStructural(task) ||
+        task.dueAt == null ||
+        (task.status === 'done' && data.settings.completedDisplay === 'hidden')
+      )
+        continue;
+      append(dayKeyOf(task.dueAt), {
+        id: task.id,
+        type: 'task',
+        title: task.title || '未命名任务',
+        done: task.status === 'done',
+        color: 'var(--accent-solid)',
+      });
     }
-    return map;
-  }, [data.tasks]);
-
+    return result;
+  }, [data.tasks, data.events, data.settings.completedDisplay, days]);
+  const move = (event: React.DragEvent, target: Date) => {
+    event.preventDefault();
+    setDropDay(null);
+    try {
+      const payload = JSON.parse(event.dataTransfer.getData('application/x-cortex-calendar')) as {
+        id?: string;
+        type?: string;
+        day?: string;
+      };
+      if (!payload.id || !payload.day || !/^\d{4}-\d{2}-\d{2}$/.test(payload.day)) return;
+      const delta = calendarDaysBetween(new Date(`${payload.day}T00:00:00`), target);
+      if (!Number.isFinite(delta) || !delta) return;
+      if (payload.type === 'task') {
+        const task = data.tasks.find((t) => t.id === payload.id);
+        if (!task || task.dueAt == null) return;
+        store.updateTask(task.id, { dueAt: addDays(task.dueAt, delta).getTime() });
+      } else if (payload.type === 'event') {
+        const item = data.events.find((e) => e.id === payload.id);
+        if (!item) return;
+        const start = addDays(item.start, delta).getTime();
+        store.updateEvent(item.id, { start, end: start + item.end - item.start });
+      } else return;
+      setMessage(`已移至 ${target.getMonth() + 1} 月 ${target.getDate()} 日`);
+    } catch {
+      setMessage('无法移动此项目，请在详情中调整日期');
+    }
+  };
   return (
-    <div className="h-full overflow-y-auto px-4 py-2 pb-24 md:px-6">
-      <div className="mb-1 grid grid-cols-7 gap-1">
-        {WEEKDAY_ZH.map((w) => (
-          <div key={w} className="py-1 text-center text-[10px] font-semibold uppercase tracking-wider text-muted">
-            周{w}
+    <div className="flex h-full flex-col overflow-y-auto" data-testid="calendar-month">
+      <div className="grid shrink-0 grid-cols-7 border-y border-[var(--calendar-grid)]">
+        {weekdayLabels.map((label) => (
+          <div key={label} className="px-2 py-2 text-center text-[11px] text-muted">
+            周{label}
           </div>
         ))}
       </div>
-      <div className="grid grid-cols-7 gap-1">
-        {days.map((d, i) => {
-          const key = dayKeyOf(d);
-          const cell = eventsByDay.get(key);
-          const due = dueByDay.get(key) ?? 0;
-          const inMonth = d.getMonth() === date.getMonth();
-          const isToday = key === todayKey;
-          const heat = cell && cell.total > 0 ? cell.done / cell.total : 0;
-          const isFuture = key > todayKey;
+      <div className="calendar-month">
+        {days.map((day) => {
+          const key = dayKeyOf(day),
+            today = key === dayKeyOf(new Date());
+          const entries = items.get(key) ?? [];
           return (
-            <button
-              key={i}
-              onClick={() => onDateChange(d)}
+            <div
+              key={key}
+              data-calendar-date={key}
+              onClick={(event) => {
+                if ((event.target as HTMLElement).closest('button')) return;
+                const due = new Date(day);
+                due.setHours(18, 0, 0, 0);
+                onCreateTask?.(due.getTime(), event);
+              }}
+              onDragOver={(event) => {
+                if (event.dataTransfer.types.includes('application/x-cortex-calendar')) {
+                  event.preventDefault();
+                  setDropDay(key);
+                }
+              }}
+              onDragLeave={() => setDropDay((old) => (old === key ? null : old))}
+              onDrop={(event) => move(event, day)}
               className={cn(
-                'flex min-h-[86px] flex-col gap-1 rounded-xl border p-1.5 text-left transition-all md:min-h-[104px]',
-                inMonth ? 'glass' : 'opacity-35',
-                isToday && 'glow-border',
-                'hover:border-[var(--border-strong)]',
+                'calendar-cell',
+                day.getMonth() !== date.getMonth() && 'bg-[var(--surface)]/50',
+                dropDay === key && 'bg-[var(--selection)]',
               )}
-              style={
-                inMonth && heat > 0
-                  ? { background: `color-mix(in srgb, var(--success) ${Math.round(heat * 16)}%, var(--surface))` }
-                  : undefined
-              }
             >
-              <div className="flex items-center justify-between">
-                <span className={cn('text-xs font-semibold tabular', isToday && 'gradient-text')}>{d.getDate()}</span>
-                {due > 0 && (
-                  <span className="rounded-full bg-[var(--danger)]/15 px-1.5 text-[9px] text-[var(--danger)]">{due}</span>
+              <button
+                aria-label={`${key}，查看日程`}
+                onClick={() => onDateChange(day)}
+                className={cn(
+                  'mb-1 grid h-6 w-6 place-items-center rounded-full text-xs',
+                  today
+                    ? 'bg-[var(--accent-solid)] font-medium text-white'
+                    : day.getMonth() !== date.getMonth()
+                      ? 'text-muted/60'
+                      : 'text-foreground',
                 )}
-              </div>
-              <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-hidden">
-                {cell?.items.map((item, idx) => (
-                  <div key={idx} className="flex items-center gap-1 text-[9px] leading-tight">
-                    <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: item.color }} />
-                    <span className={cn('truncate text-muted', item.done && 'line-through opacity-60', isFuture && '')}>{item.title}</span>
-                  </div>
-                ))}
-                {cell && cell.total > 3 && (
-                  <span className="text-[9px] text-muted/60">+{cell.total - 3} 更多</span>
-                )}
-              </div>
-              {cell && cell.total > 0 && (
-                <div className="text-[8px] text-muted/60">
-                  {cell.done}/{cell.total} 完成
-                </div>
+              >
+                {day.getDate()}
+              </button>
+              {entries.slice(0, 3).map((item) => (
+                <button
+                  key={`${item.type}:${item.id}`}
+                  draggable
+                  onDragStart={(event) => {
+                    event.dataTransfer.setData(
+                      'application/x-cortex-calendar',
+                      JSON.stringify({ id: item.id, type: item.type, day: key }),
+                    );
+                    event.dataTransfer.effectAllowed = 'move';
+                  }}
+                  onDragEnd={() => setDropDay(null)}
+                  onClick={() => {
+                    if (item.type === 'task') selectTask(item.id);
+                    else onDateChange(day);
+                  }}
+                  className={cn('calendar-item', item.done && 'text-muted line-through')}
+                  title={`${item.type === 'task' ? '到期任务' : '日程'} · ${item.title}`}
+                  style={
+                    item.type === 'event'
+                      ? { background: `color-mix(in srgb, ${item.color} 9%, transparent)` }
+                      : undefined
+                  }
+                >
+                  <span
+                    className={cn(
+                      'h-1.5 w-1.5 shrink-0',
+                      item.type === 'task' ? 'rounded-full' : 'rounded-sm',
+                    )}
+                    style={{ background: item.done ? 'var(--muted-foreground)' : item.color }}
+                  />
+                  <span className="truncate">{item.title}</span>
+                </button>
+              ))}
+              {entries.length > 3 && (
+                <button onClick={() => onDateChange(day)} className="px-1 py-1 text-[10px] text-muted">
+                  还有 {entries.length - 3} 项
+                </button>
               )}
-            </button>
+            </div>
           );
         })}
       </div>
-      <div className="mt-3 flex items-center gap-3 text-[10px] text-muted/70">
-        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ background: 'color-mix(in srgb, var(--success) 16%, var(--surface))' }} />完成度热力</span>
-        <span>红点数 = 当日到期任务</span>
-        <span>点击任意日期 → 日视图(可拖排程)</span>
+      <div
+        role="status"
+        aria-label="日历操作状态"
+        aria-live="polite"
+        className="flex min-h-9 shrink-0 items-center border-t border-[var(--border)] px-4 text-[11px] text-muted"
+      >
+        {message || '点击空白处新建任务 · 拖动可改期 · 点击日期数字查看当日日程'}
       </div>
     </div>
   );

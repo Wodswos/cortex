@@ -1,17 +1,39 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect, useRef } from 'react';
 import { Clock } from 'lucide-react';
 import { cn } from '@cortex/ui';
-import { addDays, startOfWeek, dayKeyOf, minutesOfDay, fmtHM, WEEKDAY_ZH, weekdayOf, activeTasks, isStructural } from '@cortex/core';
+import {
+  addDays,
+  startOfWeek,
+  dayKeyOf,
+  minutesOfDay,
+  fmtHM,
+  WEEKDAY_ZH,
+  weekdayOf,
+  activeTasks,
+  isStructural,
+} from '@cortex/core';
 import { useCortexData } from '@cortex/crdt';
 import { useUI } from '@/state/ui';
 import { EVENT_KIND_STYLE } from '@/shared/components';
 
 const PX_PER_HOUR = 44;
 
-export function WeekView({ date, onDateChange }: { date: Date; onDateChange: (d: Date) => void }) {
+export function WeekView({
+  date,
+  onDateChange,
+  onCreateTask,
+}: {
+  date: Date;
+  onDateChange: (d: Date) => void;
+  onCreateTask?: (dueAt: number, event: React.MouseEvent) => void;
+}) {
   const data = useCortexData();
+  const scroll = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (scroll.current) scroll.current.scrollTop = 7 * PX_PER_HOUR;
+  }, []);
   const ui = useUI();
-  const weekStart = startOfWeek(date, 1);
+  const weekStart = startOfWeek(date, data.settings.weekStartsOn);
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
   const todayKey = dayKeyOf(new Date());
   const nowMin = minutesOfDay(new Date());
@@ -29,13 +51,19 @@ export function WeekView({ date, onDateChange }: { date: Date; onDateChange: (d:
   }, [data.tasks]);
 
   return (
-    <div className="h-full overflow-y-auto px-4 pb-24 md:px-6">
+    <div ref={scroll} className="h-full overflow-auto px-4 pb-6 md:px-6">
       <div className="flex min-w-[640px]">
         {/* 时刻度 */}
         <div className="w-10 shrink-0 pt-9">
           {Array.from({ length: 24 }, (_, h) => (
-            <div key={h} className="relative text-right pr-1.5 text-[9px] text-muted/70 tabular" style={{ height: PX_PER_HOUR }}>
-              <span className="absolute -top-1.5 right-1.5">{h > 0 ? `${String(h).padStart(2, '0')}:00` : ''}</span>
+            <div
+              key={h}
+              className="relative text-right pr-1.5 text-[9px] text-muted/70 tabular"
+              style={{ height: PX_PER_HOUR }}
+            >
+              <span className="absolute -top-1.5 right-1.5">
+                {h > 0 ? `${String(h).padStart(2, '0')}:00` : ''}
+              </span>
             </div>
           ))}
         </div>
@@ -50,19 +78,44 @@ export function WeekView({ date, onDateChange }: { date: Date; onDateChange: (d:
               <button
                 onClick={() => onDateChange(d)}
                 className={cn(
-                  'mb-1 flex w-full flex-col items-center rounded-lg py-1.5 transition-colors',
+                  'sticky top-0 z-20 mb-1 flex w-full flex-col items-center rounded-md bg-[var(--background)] py-1.5 transition-colors',
                   isToday ? 'gradient-bg text-white' : 'text-muted hover:text-foreground',
                 )}
               >
                 <span className="text-[10px]">周{WEEKDAY_ZH[weekdayOf(d) - 1]}</span>
                 <span className="text-sm font-semibold tabular">{d.getDate()}</span>
               </button>
-              <div className="relative rounded-lg border border-[var(--border)] bg-[var(--surface)]" style={{ height: dayMinutes / 60 * PX_PER_HOUR }}>
+              <div
+                data-calendar-week-date={dayKeyOf(d)}
+                onClick={(event) => {
+                  if ((event.target as HTMLElement).closest('button,[data-calendar-event]')) return;
+                  const minutes = Math.min(
+                    dayMinutes - 5,
+                    Math.max(
+                      0,
+                      Math.round(
+                        ((event.clientY - event.currentTarget.getBoundingClientRect().top) / PX_PER_HOUR) *
+                          12,
+                      ) * 5,
+                    ),
+                  );
+                  onCreateTask?.(dayStart + minutes * 60000, event);
+                }}
+                className="relative rounded-lg border border-[var(--border)] bg-[var(--surface)]"
+                style={{ height: (dayMinutes / 60) * PX_PER_HOUR }}
+              >
                 {Array.from({ length: 24 }, (_, h) => (
-                  <div key={h} className="absolute inset-x-0 border-t border-[var(--border)]/60" style={{ top: (h * 60 / 60) * PX_PER_HOUR }} />
+                  <div
+                    key={h}
+                    className="absolute inset-x-0 border-t border-[var(--border)]/60"
+                    style={{ top: ((h * 60) / 60) * PX_PER_HOUR }}
+                  />
                 ))}
                 {isToday && (
-                  <div className="absolute inset-x-0 z-10 h-[2px] bg-gradient-to-r from-[var(--accent-from)] to-transparent animate-pulse-line" style={{ top: ((Date.now() - dayStart) / 3600000) * PX_PER_HOUR }} />
+                  <div
+                    className="absolute inset-x-0 z-10 h-[2px] bg-gradient-to-r from-[var(--accent-from)] to-transparent animate-pulse-line"
+                    style={{ top: ((Date.now() - dayStart) / 3600000) * PX_PER_HOUR }}
+                  />
                 )}
                 {events.map((e) => {
                   const startMin = Math.max(0, (e.start - dayStart) / 60000);
@@ -71,6 +124,7 @@ export function WeekView({ date, onDateChange }: { date: Date; onDateChange: (d:
                   return (
                     <div
                       key={e.id}
+                      data-calendar-event
                       className="absolute inset-x-0.5 overflow-hidden rounded border px-1 py-0.5 text-[9px] leading-tight"
                       style={{
                         top: (startMin / 60) * PX_PER_HOUR,
