@@ -166,8 +166,10 @@ export function ListView() {
 
   // 分组只对「根级」;子树跟随父级展示
   const groups = useMemo(
-    () => groupRoots(visibleTasks, now, undefined, { showDone }),
-    [visibleTasks, now, showDone],
+    () => projectId
+      ? [{ key: 'project', label: '项目内容', tasks: (childrenMap.get(projectId) ?? []).filter((task) => !hiddenDone?.has(task.id)) }]
+      : groupRoots(visibleTasks, now, undefined, { showDone }),
+    [projectId, childrenMap, hiddenDone, visibleTasks, now, showDone],
   );
 
   /** 每组展开后的可见行:从组内根任务 DFS(子树跟随父级,应用折叠状态) */

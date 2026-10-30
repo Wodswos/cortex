@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ChevronRight, Plus, CircleDot, Info, Trash2, Shapes } from 'lucide-react';
 import { cn } from '@cortex/ui';
-import { addDays, endOfDay, newOrder, PRIORITY_META, PRIORITY_ORDER, Priority, isStructural } from '@cortex/core';
+import { addDays, endOfDay, newOrder, PRIORITY_META, PRIORITY_ORDER, Priority, isStructural, isProject } from '@cortex/core';
 import { useCortex, useCortexData } from '@cortex/crdt';
 import { useUI } from '@/state/ui';
 
@@ -72,6 +72,7 @@ export function TaskMenu() {
   const ids = menu.ids ?? [task.id];
   const multi = ids.length > 1;
   const structural = isStructural(task); // 结构节点:菜单里不给时间/优先级,给「转回 TODO」
+  const project = isProject(task);
   const mutate = (patch: Parameters<typeof store.updateTask>[1]) =>
     ids.forEach((id) => store.updateTask(id, { ...patch }));
 
@@ -142,7 +143,7 @@ export function TaskMenu() {
           <MenuItem onHover={clearSub} onSelect={() => { close(); ui.selectTask(task.id); }}>
             <Info className="h-4 w-4 shrink-0" /> 打开详情
           </MenuItem>
-          <MenuItem
+          {!project && <MenuItem
             onHover={clearSub}
             onSelect={() => {
               // 以被右击的任务为锚:批量整批转成同一目标类型(setTaskKind 同类型时 no-op)
@@ -152,8 +153,9 @@ export function TaskMenu() {
             }}
           >
             <Shapes className="h-4 w-4 shrink-0" />
-            {structural ? '转为 TODO 任务' : '转为结构节点'}
-          </MenuItem>
+            {structural ? '转为 TODO 任务' : task.parentId === null ? '转为项目' : '转为分组'}
+          </MenuItem>}
+          {project && <MenuItem onHover={clearSub} onSelect={() => { store.setTaskStatus(task.id, 'archived'); close(); }}>归档项目</MenuItem>}
           {!structural && (
             <>
               <MenuItem onHover={(el) => openSub('time', el)} onSelect={(el) => openSub('time', el)}>
@@ -182,7 +184,7 @@ export function TaskMenu() {
           )}
           <div className="my-1 h-px bg-[var(--border)]" />
           <MenuItem danger onHover={clearSub} onSelect={() => { ids.forEach((id) => store.softDeleteTask(id)); close(); }}>
-            <Trash2 className="h-4 w-4 shrink-0" /> {multi ? `删除 ${ids.length} 个任务` : '删除任务'}
+            <Trash2 className="h-4 w-4 shrink-0" /> {multi ? `删除 ${ids.length} 个任务` : project ? '删除项目' : '删除任务'}
           </MenuItem>
         </div>
       </div>

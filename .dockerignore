@@ -2,6 +2,8 @@ node_modules
 **/node_modules
 **/dist
 data
+backups
+.preview.local
 .git
 docs
 e2e

@@ -1,9 +1,10 @@
 import type { CortexData } from './types';
+import { reviewId, validReviewPeriod } from './reviews';
 
-const collections = ['tasks', 'events', 'links', 'sessions', 'habits', 'habitLogs', 'tags'] as const;
+const collections = ['tasks', 'events', 'links', 'sessions', 'habits', 'habitLogs', 'tags', 'reviews'] as const;
 const numeric = new Set(['order', 'createdAt', 'updatedAt', 'startAt', 'dueAt', 'completedAt', 'deletedAt', 'archivedAt', 'estimateMin', 'start', 'end', 'startedAt', 'endedAt', 'plannedMin', 'actualMin', 'distractions', 'count', 'targetPerDay']);
-const strings = new Set(['id', 'title', 'notes', 'ownerId', 'name', 'date', 'taskId', 'parentId', 'target', 'serverId', 'session', 'icon', 'color', 'reminderAt', 'linkedTaskTemplateId', 'habitId']);
-const nullable = new Set(['parentId', 'taskId', 'linkedTaskTemplateId', 'startAt', 'dueAt', 'completedAt', 'deletedAt', 'archivedAt', 'priority', 'kind']);
+const strings = new Set(['id', 'title', 'notes', 'ownerId', 'name', 'date', 'taskId', 'parentId', 'target', 'serverId', 'session', 'icon', 'color', 'reminderAt', 'linkedTaskTemplateId', 'habitId', 'periodStart', 'periodEnd', 'highlights', 'friction', 'nextSteps']);
+const nullable = new Set(['parentId', 'taskId', 'linkedTaskTemplateId', 'startAt', 'dueAt', 'completedAt', 'deletedAt', 'archivedAt', 'priority', 'kind', 'facts']);
 const nonnegative = new Set(['estimateMin', 'plannedMin', 'actualMin', 'distractions', 'count', 'targetPerDay']);
 const enums: Record<string, readonly string[]> = {
   status: ['inbox', 'todo', 'doing', 'done', 'archived'], priority: ['P0', 'P1', 'P2', 'P3'],
@@ -31,7 +32,7 @@ export function validateCortexData(value: unknown): Partial<CortexData> {
         if (nonnegative.has(field)) check(typeof fieldValue === 'number' && fieldValue >= 0, `${name}.${field}`);
         if (strings.has(field)) check(typeof fieldValue === 'string', `${name}.${field}`);
         if (enums[field]) check(typeof fieldValue === 'string' && enums[field]!.includes(fieldValue), `${name}.${field}`);
-        if (['important', 'urgent', 'completed'].includes(field)) check(typeof fieldValue === 'boolean', `${name}.${field}`);
+        if (['important', 'urgent', 'completed', 'project'].includes(field)) check(typeof fieldValue === 'boolean', `${name}.${field}`);
         if (field === 'tags' || field === 'cancelledUnits') check(stringsOnly(fieldValue), `${name}.${field}`);
       }
       if (name === 'tasks') {
@@ -40,6 +41,19 @@ export function validateCortexData(value: unknown): Partial<CortexData> {
       }
       if (name === 'events' && typeof row.start === 'number' && typeof row.end === 'number') check(row.end >= row.start, 'event.end');
       if (name === 'events') check(row.kind === undefined || ['focus', 'meeting', 'personal', 'routine'].includes(String(row.kind)), 'event.kind');
+      if (name === 'reviews') {
+        const period = { kind: row.kind, start: row.periodStart, end: row.periodEnd } as import('./types').ReviewPeriod;
+        check(validReviewPeriod(period) && row.id === reviewId(period), 'review.period');
+        for (const field of ['highlights', 'friction', 'nextSteps']) check(typeof row[field] === 'string' && String(row[field]).length <= 100000, `review.${field}`);
+        if (row.facts != null) {
+          const facts = row.facts;
+          check(record(facts) && typeof facts.capturedAt === 'number' && Number.isFinite(facts.capturedAt)
+            && typeof facts.focusMin === 'number' && Number.isFinite(facts.focusMin) && facts.focusMin >= 0, 'review.facts');
+          for (const key of ['completed', 'pending']) check(Array.isArray(facts[key]) && facts[key].length <= 200000 && facts[key].every((task: unknown) => record(task) && typeof task.id === 'string' && typeof task.title === 'string' && typeof task.project === 'string'), `review.facts.${key}`);
+          check(Array.isArray(facts.projects) && facts.projects.every((project: unknown) => record(project) && typeof project.id === 'string' && typeof project.title === 'string' && Number.isInteger(project.done) && Number.isInteger(project.total) && Number(project.done) >= 0 && Number(project.total) >= Number(project.done)), 'review.facts.projects');
+        }
+        if (row.completedAt != null) check(row.facts != null, 'review.completedFacts');
+      }
       if (name === 'habitLogs') check(typeof row.count === 'number' && Number.isInteger(row.count) && row.count >= 0 && row.count <= 10000, 'habitLog.count');
       if (name === 'habits') {
         check(record(row.cadence), 'habit.cadence');
@@ -63,6 +77,9 @@ export function validateCortexData(value: unknown): Partial<CortexData> {
     if (settings.completedDisplay !== undefined) check(['inline-gray', 'hidden'].includes(String(settings.completedDisplay)), 'settings.completedDisplay');
     if (settings.mindEdgeStyle !== undefined) check(['curve', 'straight', 'step'].includes(String(settings.mindEdgeStyle)), 'settings.mindEdgeStyle');
     if (settings.weekStartsOn !== undefined) check(settings.weekStartsOn === 0 || settings.weekStartsOn === 1, 'settings.weekStartsOn');
+    for (const key of ['reviewDailyEnabled', 'reviewWeeklyEnabled']) if (settings[key] !== undefined) check(typeof settings[key] === 'boolean', `settings.${key}`);
+    for (const key of ['reviewDailyTime', 'reviewWeeklyTime']) if (settings[key] !== undefined) check(typeof settings[key] === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(settings[key]), `settings.${key}`);
+    if (settings.reviewWeeklyDay !== undefined) check(Number.isInteger(settings.reviewWeeklyDay) && Number(settings.reviewWeeklyDay) >= 0 && Number(settings.reviewWeeklyDay) <= 6, 'settings.reviewWeeklyDay');
     if (settings.pomodoro !== undefined) {
       check(record(settings.pomodoro), 'settings.pomodoro');
       for (const key of ['focusMin', 'shortBreakMin', 'longBreakMin', 'longEvery']) if (key in settings.pomodoro) check(typeof settings.pomodoro[key] === 'number' && Number.isFinite(settings.pomodoro[key]) && Number(settings.pomodoro[key]) > 0 && Number(settings.pomodoro[key]) <= 1440, `settings.pomodoro.${key}`);

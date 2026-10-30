@@ -18,6 +18,8 @@ export interface Task {
    * 右击菜单或详情面板可双向转换。
    */
   kind?: 'todo' | 'node' | null;
+  /** Explicit project identity. Legacy root structural nodes remain projects when omitted. */
+  project?: boolean;
   parentId: ID | null; // 任意层级子任务(单亲森林)
   order: number; // 同级排序(数值中点法,见 order.ts)
   important: boolean;
@@ -151,6 +153,35 @@ export const DEFAULT_POMODORO: PomodoroSettings = {
 export const ACCENTS = ['cyan-violet', 'emerald', 'amber', 'rose', 'mono'] as const;
 export type Accent = (typeof ACCENTS)[number];
 
+export type ReviewKind = 'daily' | 'weekly';
+export interface ReviewPeriod {
+  kind: ReviewKind;
+  start: string; // Local YYYY-MM-DD, inclusive.
+  end: string; // Local YYYY-MM-DD, exclusive.
+}
+export interface ReviewTaskFact { id: ID; title: string; project: string }
+export interface ReviewFacts {
+  capturedAt: number;
+  completed: ReviewTaskFact[];
+  pending: ReviewTaskFact[];
+  focusMin: number;
+  projects: { id: ID; title: string; done: number; total: number }[];
+}
+export interface Review {
+  id: ID;
+  kind: ReviewKind;
+  periodStart: string;
+  periodEnd: string;
+  highlights: string;
+  friction: string;
+  nextSteps: string;
+  facts: ReviewFacts | null;
+  completedAt: number | null;
+  ownerId: ID;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface Settings {
   accent: Accent;
   pomodoro: PomodoroSettings;
@@ -159,6 +190,11 @@ export interface Settings {
   hiddenRoots: string[]; // 导图「全部」视图里被隐藏的根任务 id(随账号同步)
   mindEdgeStyle: 'curve' | 'straight' | 'step'; // 导图连线样式:舒缓曲线/直线/折线(随账号同步)
   servers: ServerConfig[]; // 服务器档案(ssh 目标),任务关联 tmux 用
+  reviewDailyEnabled: boolean;
+  reviewDailyTime: string;
+  reviewWeeklyEnabled: boolean;
+  reviewWeeklyDay: number; // Date.getDay(): 0=Sun.
+  reviewWeeklyTime: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -169,6 +205,11 @@ export const DEFAULT_SETTINGS: Settings = {
   hiddenRoots: [],
   mindEdgeStyle: 'curve',
   servers: [],
+  reviewDailyEnabled: true,
+  reviewDailyTime: '21:30',
+  reviewWeeklyEnabled: true,
+  reviewWeeklyDay: 0,
+  reviewWeeklyTime: '20:00',
 };
 
 export interface CortexData {
@@ -179,6 +220,7 @@ export interface CortexData {
   habits: Habit[];
   habitLogs: HabitLog[];
   tags: Tag[];
+  reviews: Review[];
   settings: Settings;
 }
 
@@ -190,6 +232,7 @@ export const EMPTY_DATA: CortexData = {
   habits: [],
   habitLogs: [],
   tags: [],
+  reviews: [],
   settings: DEFAULT_SETTINGS,
 };
 

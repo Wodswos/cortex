@@ -6,7 +6,7 @@ import { CanvasAddon } from '@xterm/addon-canvas';
 import '@xterm/xterm/css/xterm.css';
 import { AlertTriangle, ExternalLink, Maximize2, Minimize2, Plus, RefreshCw, SquareX, Terminal, X } from 'lucide-react';
 import { cn } from '@cortex/ui';
-import { api, apiUserId, useCortexData } from '@cortex/crdt';
+import { api, apiUserId, socketUrl, useCortexData } from '@cortex/crdt';
 import type { ServerConfig } from '@cortex/core';
 import { useUI } from '@/state/ui';
 
@@ -121,9 +121,8 @@ function TmuxSession({
         return;
       }
       if (disposed) return;
-      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
       const url =
-        `${proto}//${location.host}/api/tmux/attach` +
+        socketUrl('/api/tmux/attach') +
         `${ticket ? `?ticket=${encodeURIComponent(ticket)}` : '?'}` +
         `&serverId=${encodeURIComponent(server.id)}` +
         `&session=${encodeURIComponent(session)}&cols=${term.cols}&rows=${term.rows}`;

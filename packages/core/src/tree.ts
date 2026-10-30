@@ -21,7 +21,7 @@ export function taskRange(t: Task): { start: number; end: number } {
 /** 纯投影修复:每个环断开字典序最小节点的父边,与更新到达顺序无关。 */
 export function normalizeTaskForest(tasks: Task[]): Task[] {
   const byId = new Map(tasks.map((t) => [t.id, t]));
-  const parents = new Map(tasks.map((t) => [t.id, t.parentId && byId.has(t.parentId) ? t.parentId : null]));
+  const parents = new Map(tasks.map((t) => [t.id, !t.project && t.parentId && byId.has(t.parentId) ? t.parentId : null]));
   const finished = new Set<string>();
   for (const task of tasks) {
     const path: string[] = [];
@@ -130,6 +130,8 @@ export function ancestorsOf(id: string, byId: Map<string, Task>): Task[] {
 export function canReparent(taskId: string, newParentId: string | null, children: Map<string | null, Task[]>): boolean {
   if (taskId === newParentId) return false;
   if (newParentId === null) return true;
+  const root = children.get(null)?.find((task) => task.id === taskId);
+  if (root && isProject(root)) return false;
   return !descendantsOf(taskId, children).has(newParentId);
 }
 
@@ -154,12 +156,30 @@ export function subtreeProgress(taskId: string, children: Map<string | null, Tas
 
 /** 有效任务 = 未软删未归档 */
 export function activeTasks(tasks: Task[]): Task[] {
-  return tasks.filter((t) => !t.deletedAt && t.status !== 'archived');
+  const hidden = new Set<string>();
+  const unavailable = tasks.filter((task) => isProject(task) && (task.deletedAt || task.status === 'archived'));
+  if (unavailable.length) {
+    const children = buildChildrenMap(tasks);
+    for (const project of unavailable) for (const id of descendantsOf(project.id, children)) hidden.add(id);
+  }
+  return tasks.filter((t) => !t.deletedAt && t.status !== 'archived' && !hidden.has(t.id));
 }
 
 /** 结构性节点(非 TODO):不可完成、无状态/优先级/时间,视图里作纯容器/主题(见 types.Task.kind) */
 export function isStructural(t: Task): boolean {
-  return t.kind === 'node';
+  return t.kind === 'node' || t.project === true;
+}
+
+export function isProject(task: Task): boolean {
+  return task.project ?? (task.kind === 'node' && task.parentId === null);
+}
+
+/** Keep a project's root and complete descendant tree; a missing project yields no content. */
+export function tasksInProject(tasks: Task[], projectId: string | null): Task[] {
+  if (!projectId) return tasks;
+  if (!tasks.some((task) => task.id === projectId)) return [];
+  const ids = descendantsOf(projectId, buildChildrenMap(tasks)).add(projectId);
+  return tasks.filter((task) => ids.has(task.id));
 }
 
 /**

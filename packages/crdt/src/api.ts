@@ -1,4 +1,5 @@
 import type { ServerConfig } from '@cortex/core';
+import { apiUrl } from './endpoint';
 
 let expectedUserId: string | null = null;
 export function setApiUserId(id: string | null): void { expectedUserId = id; }
@@ -30,7 +31,7 @@ async function req<T>(path: string, init?: RequestInit, timeoutMs = 8000): Promi
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   let res: Response;
-  try { res = await fetch(path, {
+  try { res = await fetch(apiUrl(path), {
     ...init,
     credentials: 'include',
     signal: init?.signal ?? controller.signal,

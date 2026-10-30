@@ -12,7 +12,7 @@ import {
   activeTasks,
   isStructural,
 } from '@cortex/core';
-import { useCortexData } from '@cortex/crdt';
+import { useTaskViewData } from '../useTaskViewData';
 import { useUI } from '@/state/ui';
 import { EVENT_KIND_STYLE } from '@/shared/components';
 
@@ -27,7 +27,7 @@ export function WeekView({
   onDateChange: (d: Date) => void;
   onCreateTask?: (dueAt: number, event: React.MouseEvent) => void;
 }) {
-  const data = useCortexData();
+  const data = useTaskViewData();
   const scroll = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (scroll.current) scroll.current.scrollTop = 7 * PX_PER_HOUR;
@@ -42,13 +42,13 @@ export function WeekView({
   const dueByDay = useMemo(() => {
     const map = new Map<string, typeof data.tasks>();
     for (const t of activeTasks(data.tasks)) {
-      if (t.status === 'inbox' || t.status === 'done' || t.dueAt == null || isStructural(t)) continue; // 结构节点不排期
+      if (t.status === 'inbox' || t.status === 'done' && data.settings.completedDisplay === 'hidden' || t.dueAt == null || isStructural(t)) continue; // 结构节点不排期
       const arr = map.get(dayKeyOf(t.dueAt)) ?? [];
       arr.push(t);
       map.set(dayKeyOf(t.dueAt), arr);
     }
     return map;
-  }, [data.tasks]);
+  }, [data.tasks, data.settings.completedDisplay]);
 
   return (
     <div ref={scroll} className="h-full overflow-auto px-4 pb-6 md:px-6">
@@ -143,21 +143,22 @@ export function WeekView({
                 })}
                 {(dueByDay.get(dayKeyOf(d)) ?? []).map((t) => {
                   const m = (t.dueAt! - dayStart) / 60000;
+                  const color = t.status === 'done' ? 'var(--muted-foreground)' : 'var(--danger)';
                   if (m < 0 || m >= 1440) return null;
                   return (
                     <button
                       key={t.id}
                       onClick={() => ui.selectTask(t.id)}
-                      className="absolute inset-x-0.5 z-[5] flex items-center gap-1 overflow-hidden rounded border border-dashed px-1 text-left"
+                      className={cn('absolute inset-x-0.5 z-[5] flex items-center gap-1 overflow-hidden rounded border border-dashed px-1 text-left', t.status === 'done' && 'text-muted opacity-60 line-through')}
                       style={{
                         top: (m / 60) * PX_PER_HOUR - 8,
                         height: 16,
-                        borderColor: 'color-mix(in srgb, var(--danger) 55%, transparent)',
-                        background: 'color-mix(in srgb, var(--danger) 8%, transparent)',
+                        borderColor: `color-mix(in srgb, ${color} 55%, transparent)`,
+                        background: `color-mix(in srgb, ${color} 8%, transparent)`,
                       }}
                       title={`截止:${fmtHM(t.dueAt!)} · ${t.title || 'Untitled'}`}
                     >
-                      <Clock className="h-2.5 w-2.5 shrink-0 text-[var(--danger)]" />
+                      <Clock className="h-2.5 w-2.5 shrink-0" style={{ color }} />
                       <span className="truncate text-[9px] font-medium">{t.title || 'Untitled'}</span>
                     </button>
                   );

@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { WebSocketServer, WebSocket } from 'ws';
 import { sshArgs, shellQuote, sshCredentialError, type SshConnection } from './connections';
-import { originAllowed, upgradeUrl, type WsIdentity } from './security';
+import { socketOriginAllowed, upgradeUrl, type WsIdentity } from './security';
 
 export const SESSION_RE = /^[\w.:@$=-]{1,128}$/;
 const activeCommands = new Map<string, number>();
@@ -73,7 +73,7 @@ export function setupTmux(
     const url = upgradeUrl(req.url);
     if (url?.pathname !== '/api/tmux/attach') return;
     const deny = (status: string) => { socket.write(`HTTP/1.1 ${status}\r\nConnection: close\r\n\r\n`); socket.destroy(); };
-    if (!originAllowed(req.headers)) return deny('403 Forbidden');
+    if (!socketOriginAllowed(req.headers)) return deny('403 Forbidden');
     const identity = verifyTicket(url.searchParams.get('ticket') ?? '');
     if (!identity) return deny('401 Unauthorized');
     if (bridges.size >= 32 || [...bridges.values()].filter((value) => value.userId === identity.userId).length >= 4) return deny('429 Too Many Requests');

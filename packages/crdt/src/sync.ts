@@ -4,6 +4,7 @@ import * as decoding from 'lib0/decoding';
 import * as syncProtocol from 'y-protocols/sync';
 import { encodeFrame, decodeFrame } from './framing';
 import type { DocId } from './store';
+import { socketUrl } from './endpoint';
 
 export type SyncStatus = 'offline' | 'connecting' | 'online';
 
@@ -42,10 +43,7 @@ export class SyncClient {
   ) {}
 
   static defaultUrl(): string {
-    const loc = (globalThis as { location?: { protocol: string; host: string } }).location;
-    if (!loc) return 'ws://localhost:30090/api/sync';
-    const proto = loc.protocol === 'https:' ? 'wss:' : 'ws:';
-    return `${proto}//${loc.host}/api/sync`;
+    return socketUrl('/api/sync');
   }
 
   get status(): SyncStatus {

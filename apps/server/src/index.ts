@@ -74,7 +74,8 @@ app.post('/api/auth/register', async (c) => {
   const body = await json(c);
   const username = text(body?.username);
   const password = typeof body?.password === 'string' ? body.password : '';
-  if (!/^[a-zA-Z0-9_一-龥]{2,32}$/.test(username) || password.length < 6 || password.length > 1024) return c.json({ error: '用户名需 2–32 位,密码需 6–1024 位' }, 400);
+  if (!/^[a-zA-Z0-9_一-龥-]{2,32}$/.test(username)) return c.json({ error: '用户名需 2–32 位，仅支持中文、字母、数字、下划线（_）和连字符（-）' }, 400);
+  if (password.length < 6 || password.length > 1024) return c.json({ error: '密码需 6–1024 位' }, 400);
   const { hash, salt } = await hashPassword(password);
   try {
     const user = db.registerUser(username, hash, salt, text(body?.inviteCode) || undefined);

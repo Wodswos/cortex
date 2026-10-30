@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { Button, Input } from '@cortex/ui';
-import { isStructural, newOrder, type Priority } from '@cortex/core';
+import { isProject, newOrder, type Priority } from '@cortex/core';
 import { useCortex, useCortexData } from '@cortex/crdt';
 import { isComposing } from '@/shared/ime';
 
@@ -20,13 +21,14 @@ export function CalendarTaskDraft({
 }) {
   const store = useCortex();
   const data = useCortexData();
+  const [params] = useSearchParams();
   const panel = useRef<HTMLFormElement>(null);
   const [title, setTitle] = useState('');
   const [date, setDate] = useState(() => {
     const value = new Date(anchor.dueAt);
     return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}T${String(value.getHours()).padStart(2, '0')}:${String(value.getMinutes()).padStart(2, '0')}`;
   });
-  const [projectId, setProjectId] = useState('');
+  const [projectId, setProjectId] = useState(() => params.get('project') ?? '');
   const [priority, setPriority] = useState<Priority>('P3');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -58,7 +60,7 @@ export function CalendarTaskDraft({
     if (composing.current || !title.trim() || !Number.isFinite(dueAt) || busy) return;
     if (
       projectId &&
-      !data.tasks.some((task) => task.id === projectId && !task.deletedAt && isStructural(task))
+      !data.tasks.some((task) => task.id === projectId && !task.deletedAt && task.status !== 'archived' && isProject(task))
     ) {
       setError('该项目已移除，请重新选择');
       return;
@@ -155,7 +157,7 @@ export function CalendarTaskDraft({
         >
           <option value="">无项目</option>
           {data.tasks
-            .filter((task) => isStructural(task) && !task.deletedAt)
+            .filter((task) => isProject(task) && !task.deletedAt && task.status !== 'archived')
             .map((task) => (
               <option key={task.id} value={task.id}>
                 {task.title || '未命名项目'}

@@ -88,7 +88,32 @@ corepack pnpm build:desktop
 
 ## iPhone Capacitor 壳
 
-默认打包本地 Web,不再使用占位远程域名。需要远程模式时设置真实 HTTPS 地址:
+默认打包本地 Web 和本地数据库,使用 `apps/web/.env.mobile` 中的
+`VITE_CORTEX_API_ORIGIN` 连接账号服务器。目前对应现有部署
+`http://115.190.3.4:30090`。Web 构建仍保持同源请求,不会使用移动端专用地址。
+
+```bash
+corepack pnpm --filter @cortex/mobile sync
+# 更换原生 App 后端时,构建与 iOS 配置使用同一个环境变量:
+VITE_CORTEX_API_ORIGIN=https://cortex.example.com corepack pnpm --filter @cortex/mobile sync
+corepack pnpm --filter @cortex/mobile open:ios
+```
+
+原生 HTTP 通过 CapacitorHttp 使用系统 Cookie 存储,不把会话令牌写入
+localStorage。同步和终端 WebSocket 使用同一个服务器地址,仍需有效的一次性
+会话票据。服务端仅为这些带票据的 WebSocket 接受 `capacitor://localhost`
+来源;HTTP 来源校验和 Cookie 配置不变。
+
+`sync` 会为显式配置的 HTTP 主机添加单独的 ATS 例外,不会关闭整个 App 的
+传输安全校验。IP 地址例外需要 iOS 17 或更新版本。原生工程已存在时会保留
+Team、Bundle Identifier 和其他 Info.plist 配置。原生工程本身被 gitignore
+排除,因此修改服务器后应再次运行完整的 `sync`。
+
+安全区统一由网页根容器处理。WKWebView 使用 `contentInset: never`、
+`scrollEnabled: false`;Keyboard 插件按 `native` 模式调整视图高度。页面内部
+列表和登录表单负责滚动,不要给外层页面再加一层安全区或键盘高度补偿。
+
+需要加载整个远程网页而非本地资源时,可选择已有的 HTTPS 远程模式:
 
 ```bash
 CORTEX_MOBILE_URL=https://cortex.example.com corepack pnpm --filter @cortex/mobile sync
@@ -98,7 +123,16 @@ corepack pnpm exec cap add ios
 corepack pnpm exec cap open ios
 ```
 
-在 Xcode 设置 Team 与唯一 Bundle Identifier,连 iPhone 运行。免费 Personal Team 签名通常 7 天失效。当前未完成 Mac/iOS 真机构建;原生分享入口、后台执行和平台通知仍需接线与设备验证,不列为已完成能力。日常使用可先选择 HTTPS PWA。
+在 Xcode 设置 Team 与唯一 Bundle Identifier,连 iPhone 运行。免费 Personal Team 签名通常 7 天失效。模拟器构建和未签名的真机归档不代表已经能安装到手机;真机安装还需要签名。原生分享入口、后台执行和平台通知仍需接线与设备验证,不列为已完成能力。
+
+## 日报与周报
+
+「复盘」提供日报、周报和历史记录。草稿随账号同步并包含在 JSON 备份中;
+点击「完成复盘」后保存任务与专注汇总快照,继续编辑会恢复为草稿。
+默认提醒为设备本地时间每天 21:30、每周日 20:00,可在复盘页面调整或关闭。
+提醒在应用打开时检查,未完成的最近一期会在下次打开时提示,可推迟一小时;
+不提供网页关闭后的后台定时推送。工作汇总基于当前任务状态与已记录的专注会话,
+不是任务状态的历史回放;跨日专注按会话实际时间比例分配。
 
 ## 故障排查
 

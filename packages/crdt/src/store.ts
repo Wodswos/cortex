@@ -19,11 +19,18 @@ import {
   renumberSiblings,
   quadrantFields,
   isStructural,
+  isProject,
+  newOrder,
   normalizeTaskForest,
   buildChildrenMap,
   canReparent,
   validateCortexData,
   CortexSnapshot,
+  Review,
+  ReviewPeriod,
+  reviewFacts,
+  reviewId,
+  validReviewPeriod,
 } from '@cortex/core';
 
 /**
@@ -241,6 +248,7 @@ export class CortexStore {
     const habits = cached('habits', () => collect<Habit>(this.docs.habits, defaultsHabit));
     const habitLogs = cached('habitLogs', () => collect<HabitLog>(this.docs.habitLogs, defaultsLog));
     const tags = collect<Tag>(this.docs.root.getMap('tags'), defaultsTag);
+    const reviews = cached('root', () => this.collectReviews());
 
     const settingsMap = this.docs.root.getMap<unknown>('settings');
     const settings: Settings = { ...DEFAULT_SETTINGS };
@@ -253,7 +261,57 @@ export class CortexStore {
     if (settings.pomodoro == null) settings.pomodoro = DEFAULT_SETTINGS.pomodoro;
     else settings.pomodoro = { ...DEFAULT_SETTINGS.pomodoro, ...settings.pomodoro };
 
-    return { tasks, events, links, sessions, habits, habitLogs, tags, settings };
+    return { tasks, events, links, sessions, habits, habitLogs, tags, reviews, settings };
+  }
+
+  // Flat deterministic field keys let two devices start the same day's review concurrently
+  // without racing to replace a nested Y.Map and losing one device's different fields.
+  private collectReviews(): Review[] {
+    const rows = new Map<string, Record<string, unknown>>();
+    const allowed = new Set(['kind', 'periodStart', 'periodEnd', 'ownerId', 'createdAt', 'updatedAt', 'highlights', 'friction', 'nextSteps', 'facts', 'completedAt']);
+    for (const [key, value] of this.docs.root.getMap('reviewFields')) {
+      const split = key.indexOf('/');
+      if (split < 0) continue;
+      const id = key.slice(0, split), field = key.slice(split + 1);
+      if (!/^(daily|weekly)_\d{4}-\d{2}-\d{2}$/.test(id) || !allowed.has(field)) continue;
+      const row = rows.get(id) ?? { id, highlights: '', friction: '', nextSteps: '', facts: null, completedAt: null };
+      row[field] = value;
+      rows.set(id, row);
+    }
+    return [...rows.values()].filter(row => row.kind && row.periodStart && row.periodEnd) as unknown as Review[];
+  }
+
+  updateReview(period: ReviewPeriod, patch: Partial<Pick<Review, 'highlights' | 'friction' | 'nextSteps'>> & { completedAt?: null }): Review {
+    if (!validReviewPeriod(period)) throw new Error('无效的复盘日期');
+    for (const field of ['highlights', 'friction', 'nextSteps'] as const) if (patch[field] !== undefined && (typeof patch[field] !== 'string' || patch[field]!.length > 100000)) throw new Error('复盘内容过长或格式无效');
+    const id = reviewId(period), fields = this.docs.root.getMap('reviewFields'), timestamp = now();
+    this.docs.root.transact(() => {
+      const base = { kind: period.kind, periodStart: period.start, periodEnd: period.end, ownerId: this.userId, createdAt: timestamp };
+      for (const [field, value] of Object.entries(base)) if (!fields.has(`${id}/${field}`)) fields.set(`${id}/${field}`, value);
+      for (const field of ['highlights', 'friction', 'nextSteps'] as const) if (patch[field] !== undefined) {
+        fields.set(`${id}/${field}`, patch[field]);
+        fields.set(`${id}/completedAt`, null);
+      }
+      if (patch.completedAt === null) fields.set(`${id}/completedAt`, null);
+      fields.set(`${id}/updatedAt`, timestamp);
+    });
+    return this.getData().reviews.find(review => review.id === id)!;
+  }
+
+  completeReview(period: ReviewPeriod): Review {
+    if (!validReviewPeriod(period)) throw new Error('无效的复盘日期');
+    const id = reviewId(period);
+    const review = this.getData().reviews.find(item => item.id === id);
+    if (!review || ![review.highlights, review.friction, review.nextSteps].some(value => value.trim())) throw new Error('写下一点收获、反思或下一步，再完成复盘');
+    if (review.periodEnd !== period.end) throw new Error('复盘周期已经变化，请重新打开这份复盘');
+    const timestamp = now(), facts = reviewFacts(this.getData(), period, timestamp);
+    this.docs.root.transact(() => {
+      const fields = this.docs.root.getMap('reviewFields');
+      fields.set(`${id}/facts`, facts);
+      fields.set(`${id}/completedAt`, timestamp);
+      fields.set(`${id}/updatedAt`, timestamp);
+    });
+    return this.getData().reviews.find(item => item.id === id)!;
   }
 
   // ---------- 通用实体写 ----------
@@ -305,8 +363,9 @@ export class CortexStore {
       title: patch.title?.trim() || 'Untitled',
       notes: patch.notes,
       status: patch.status ?? 'inbox',
-      kind: patch.kind ?? 'todo',
-      parentId: patch.parentId ?? null,
+      kind: patch.project ? 'node' : patch.kind ?? 'todo',
+      project: patch.project ?? (patch.kind === 'node' && patch.parentId == null),
+      parentId: patch.project ? null : patch.parentId ?? null,
       order: patch.order ?? 0,
       important: patch.important ?? false,
       urgent: patch.urgent ?? false,
@@ -318,16 +377,29 @@ export class CortexStore {
       ownerId: this.userId,
       createdAt: t,
       updatedAt: t,
-      completedAt: null,
+      completedAt: patch.status === 'done' ? patch.completedAt ?? t : null,
       deletedAt: null,
     };
     this.put('tasks', task as unknown as Record<string, unknown>);
     return task;
   }
 
+  createProject(title: string): Task {
+    if (!title.trim()) throw new Error('请输入项目名称');
+    const roots = this.getData().tasks.filter((task) => !task.parentId && !task.deletedAt);
+    const lastOrder = roots.length ? Math.max(...roots.map((task) => task.order)) : undefined;
+    return this.createTask({ title, kind: 'node', project: true, status: 'todo', order: newOrder(lastOrder) });
+  }
+
   updateTask(id: string, patch: Partial<Task>): void {
     const cur = this.get<Task>('tasks', id);
     if (!cur) return;
+    if (isProject(cur) && (patch.parentId != null || patch.kind === 'todo' || patch.project === false)) return;
+    // Stamp legacy structural identity before moving it, so an internal group stays a group.
+    if (cur.kind === 'node' && cur.project === undefined) patch = { ...patch, project: isProject(cur) };
+    if (patch.kind === 'node' && cur.kind !== 'node' && patch.project === undefined)
+      patch = { ...patch, project: cur.parentId === null };
+    if (cur.project === true || patch.project === true) patch = { ...patch, kind: 'node', parentId: null };
     if (patch.parentId !== undefined && patch.parentId !== cur.parentId) {
       const tasks = this.getData().tasks;
       if (patch.parentId !== null && !tasks.some((t) => t.id === patch.parentId && !t.deletedAt)) return;
@@ -644,12 +716,12 @@ export class CortexStore {
         validateCortexData(preview.getData());
       } finally { preview.destroy(); for (const doc of Object.values(preview.docs)) doc.destroy(); }
       const before = this.getData();
-      const beforeCount = before.tasks.length + before.events.length;
+      const beforeCount = before.tasks.length + before.events.length + before.reviews.length;
       this.withUndoSuspended(() => {
         for (const id of DOC_IDS) if (updates[id]) Y.applyUpdate(this.docs[id], updates[id]!, 'import');
       });
       const after = this.getData();
-      return Math.max(0, after.tasks.length + after.events.length - beforeCount);
+      return Math.max(0, after.tasks.length + after.events.length + after.reviews.length - beforeCount);
     }
     const data = validateCortexData(envelope.data ?? input);
     return this.withUndoSuspended(() => this.importJSONInner(data));
@@ -670,6 +742,16 @@ export class CortexStore {
     importRows('sessions', data.sessions, defaultsSession);
     importRows('habits', data.habits, defaultsHabit);
     importRows('habitLogs', data.habitLogs, defaultsLog);
+    const reviewFields = this.docs.root.getMap('reviewFields');
+    const reviewIds = new Set(this.getData().reviews.map(review => review.id));
+    this.docs.root.transact(() => {
+      for (const review of data.reviews ?? []) if (!reviewIds.has(review.id)) {
+        for (const [field, value] of Object.entries({ ...review, ownerId: this.userId })) {
+          if (field !== 'id') reviewFields.set(`${review.id}/${field}`, value);
+        }
+        count++;
+      }
+    });
     const tags = this.docs.root.getMap<Y.Map<unknown>>('tags');
     for (const tag of data.tags ?? []) if (!tags.has(tag.id)) {
       const entity = new Y.Map<unknown>();
@@ -714,7 +796,7 @@ export class CortexStore {
     if (meta.get('claimedBy') !== userId) return;
     this.withUndoSuspended(() => {
       for (const id of DOC_IDS) this.docs[id].transact(() => {
-        if (id === 'root') { this.docs.root.getMap('tags').clear(); this.docs.root.getMap('settings').clear(); }
+        if (id === 'root') { this.docs.root.getMap('tags').clear(); this.docs.root.getMap('settings').clear(); this.docs.root.getMap('reviewFields').clear(); }
         else this.entityMap(id).clear();
       });
       meta.delete('claimedBy');

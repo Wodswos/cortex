@@ -41,8 +41,8 @@ export default function LoginPage() {
   const firstUser = auth.initialized === false;
 
   return (
-    <div className="relative z-10 flex h-dvh items-center justify-center px-4">
-      <div className="w-full max-w-sm">
+    <div data-testid="login-scroll" className="relative z-10 flex h-full flex-col overflow-y-auto px-4 py-6">
+      <div className="mx-auto my-auto w-full max-w-sm shrink-0">
         <div className="mb-8 flex flex-col items-center gap-3">
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl gradient-bg shadow-[0_8px_32px_-8px_color-mix(in_srgb,var(--accent-from)_70%,transparent)]">
             <Check className="h-8 w-8 text-white" />
@@ -74,7 +74,7 @@ export default function LoginPage() {
           </div>
 
           <div className="space-y-3">
-            <Input placeholder="用户名" value={username} autoComplete="username" onChange={(e) => setUsername(e.target.value)} />
+            <Input placeholder="用户名" value={username} autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} onChange={(e) => setUsername(e.target.value)} />
             <Input
               placeholder="密码"
               type="password"
@@ -84,7 +84,7 @@ export default function LoginPage() {
               onKeyDown={(e) => e.key === 'Enter' && void submit()}
             />
             {mode === 'register' && !firstUser && (
-              <Input placeholder="邀请码" value={invite} onChange={(e) => setInvite(e.target.value)} />
+              <Input placeholder="邀请码" value={invite} autoCapitalize="none" autoCorrect="off" spellCheck={false} onChange={(e) => setInvite(e.target.value)} />
             )}
             {error && <div className="text-xs text-[var(--danger)]">{error}</div>}
             <Button variant="primary" className="w-full" onClick={() => void submit()} disabled={busy || !username || !password}>

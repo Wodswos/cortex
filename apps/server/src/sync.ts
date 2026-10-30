@@ -7,7 +7,7 @@ import * as syncProtocol from 'y-protocols/sync';
 import { WebSocketServer, WebSocket } from 'ws';
 import { DB } from './db';
 import { decodeFrame, encodeFrame } from '../../../packages/crdt/src/framing';
-import { originAllowed, upgradeUrl, type WsIdentity } from './security';
+import { socketOriginAllowed, upgradeUrl, type WsIdentity } from './security';
 
 export const DOC_NAMES = ['root', 'tasks', 'events', 'links', 'sessions', 'habits', 'habitLogs'] as const;
 interface Room { doc: Y.Doc; conns: Set<WebSocket>; dirty: boolean }
@@ -21,7 +21,7 @@ export function setupSync(server: ServerType, db: DB, verifyTicket: (ticket: str
     const url = upgradeUrl(req.url);
     if (url?.pathname !== '/api/sync') return;
     const deny = (status: string) => { socket.write(`HTTP/1.1 ${status}\r\nConnection: close\r\n\r\n`); socket.destroy(); };
-    if (!originAllowed(req.headers)) return deny('403 Forbidden');
+    if (!socketOriginAllowed(req.headers)) return deny('403 Forbidden');
     const identity = verifyTicket(url.searchParams.get('ticket') ?? '');
     if (!identity) return deny('401 Unauthorized');
     if (identities.size >= 128 || [...identities.values()].filter((value) => value.userId === identity.userId).length >= 16) return deny('429 Too Many Requests');

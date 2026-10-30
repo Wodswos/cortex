@@ -13,7 +13,8 @@ import {
   activeTasks,
   isStructural,
 } from '@cortex/core';
-import { useCortex, useCortexData } from '@cortex/crdt';
+import { useCortex } from '@cortex/crdt';
+import { useTaskViewData } from '../useTaskViewData';
 import { useUI } from '@/state/ui';
 import { useTimer } from '@/focus/timer';
 import { EVENT_KIND_STYLE } from '@/shared/components';
@@ -46,7 +47,7 @@ export function DayView({
   onDateChange: (d: Date) => void;
   onCreateTask?: (dueAt: number, event: React.PointerEvent) => void;
 }) {
-  const data = useCortexData();
+  const data = useTaskViewData();
   const store = useCortex();
   const ui = useUI();
   const navigate = useNavigate();
@@ -115,13 +116,13 @@ export function DayView({
       activeTasks(data.tasks).filter(
         (t) =>
           t.status !== 'inbox' &&
-          t.status !== 'done' &&
+          (t.status !== 'done' || data.settings.completedDisplay !== 'hidden') &&
           !isStructural(t) &&
           t.dueAt != null &&
           t.dueAt >= dayStart &&
           t.dueAt < dayEnd,
       ),
-    [data.tasks, dayStart, dayEnd],
+    [data.tasks, data.settings.completedDisplay, dayStart, dayEnd],
   );
 
   const localMin = (e: ScheduleEvent) => ({
@@ -338,23 +339,24 @@ export function DayView({
               {/* 到期任务标记:截止时间点上的虚线块,点击看任务详情 */}
               {dueTasks.map((t) => {
                 const m = (t.dueAt! - dayStart) / 60000;
+                const color = t.status === 'done' ? 'var(--muted-foreground)' : 'var(--danger)';
                 return (
                   <button
                     key={t.id}
                     onClick={() => ui.selectTask(t.id)}
                     onPointerDown={(e) => e.stopPropagation()}
-                    className="absolute left-1 right-1 z-[5] flex items-center gap-1 overflow-hidden rounded-lg border border-dashed px-2 text-left transition-transform hover:scale-[1.01]"
+                    className={cn('absolute left-1 right-1 z-[5] flex items-center gap-1 overflow-hidden rounded-lg border border-dashed px-2 text-left transition-transform hover:scale-[1.01]', t.status === 'done' && 'text-muted opacity-60 line-through')}
                     style={{
                       top: minToPx(m) - 9,
                       height: 18,
-                      borderColor: 'color-mix(in srgb, var(--danger) 55%, transparent)',
-                      background: 'color-mix(in srgb, var(--danger) 8%, transparent)',
+                      borderColor: `color-mix(in srgb, ${color} 55%, transparent)`,
+                      background: `color-mix(in srgb, ${color} 8%, transparent)`,
                     }}
                     title={`截止:${fmtHM(t.dueAt!)} · ${t.title || 'Untitled'}`}
                   >
-                    <Clock className="h-3 w-3 shrink-0 text-[var(--danger)]" />
+                    <Clock className="h-3 w-3 shrink-0" style={{ color }} />
                     <span className="truncate text-[11px] font-medium">{t.title || 'Untitled'}</span>
-                    <span className="ml-auto shrink-0 text-[9px] text-[var(--danger)] tabular">
+                    <span className="ml-auto shrink-0 text-[9px] tabular" style={{ color }}>
                       {fmtHM(t.dueAt!)}
                     </span>
                   </button>

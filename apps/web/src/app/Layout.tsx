@@ -19,9 +19,10 @@ import {
   LayoutGrid,
   Menu,
   Check,
+  BookOpen,
 } from 'lucide-react';
 import { cn } from '@cortex/ui';
-import { activeTasks, inboxTasks, isStructural, sortSiblings } from '@cortex/core';
+import { activeTasks, inboxTasks, isProject, sortSiblings } from '@cortex/core';
 import { useCortex, useCortexData } from '@cortex/crdt';
 import { useAuth } from './auth';
 import { useUI } from '../state/ui';
@@ -32,6 +33,7 @@ import { TaskSheet } from '../shared/TaskSheet';
 import { TaskMenu } from '../shared/TaskMenu';
 import { isComposing } from '../shared/ime';
 import { ProjectList } from './ProjectList';
+import { ReviewReminder } from '../features/reviews/ReviewReminder';
 const TmuxViewer = lazy(() =>
   import('../shared/TmuxViewer').then((module) => ({ default: module.TmuxViewer })),
 );
@@ -91,6 +93,7 @@ const views = [
   { to: '/tasks?view=matrix', label: '四象限', icon: LayoutGrid },
 ];
 const tools = [
+  { to: '/reviews', label: '复盘', icon: BookOpen },
   { to: '/focus', label: '专注', icon: Timer },
   { to: '/habits', label: '习惯', icon: Activity },
 ];
@@ -109,7 +112,7 @@ export function Layout() {
   const projects = useMemo(
     () =>
       activeTasks(data.tasks)
-        .filter((task) => !task.parentId && isStructural(task))
+        .filter(isProject)
         .sort(sortSiblings),
     [data.tasks],
   );
@@ -167,7 +170,7 @@ export function Layout() {
   }, [setCommand, setCapture, store, immersive]);
   if (phase === 'loading')
     return (
-      <div className="grid h-dvh place-items-center">
+      <div className="grid h-full place-items-center">
         <div className="space-y-3 text-center text-sm text-muted">
           <span>{error || '正在打开工作空间…'}</span>
           {error && (
@@ -190,7 +193,7 @@ export function Layout() {
       </Link>
     ));
   return (
-    <div className="flex h-dvh overflow-hidden bg-[var(--background)]">
+    <div className="flex h-full overflow-hidden bg-[var(--background)]">
       {!immersive && (
         <>
           {navigationOpen && (
@@ -203,7 +206,7 @@ export function Layout() {
           <aside
             className={cn(
               'workspace-sidebar flex-col px-3 py-5',
-              navigationOpen ? 'fixed inset-y-0 left-0 z-50 flex' : 'hidden md:flex',
+              navigationOpen ? 'fixed top-[env(safe-area-inset-top)] bottom-[env(safe-area-inset-bottom)] left-[env(safe-area-inset-left)] z-50 flex' : 'hidden md:flex',
             )}
           >
             <Link to="/" className="mb-6 flex shrink-0 items-center gap-2.5 px-3">
@@ -223,7 +226,6 @@ export function Layout() {
               <nav aria-label="工作导航" className="space-y-0.5">
                 {nav(primary)}
               </nav>
-              <div className="workspace-section">项目</div>
               <ProjectList projects={projects} selectedId={params.get('project')} />
               <div className="workspace-section">视图</div>
               <nav aria-label="视图" className="space-y-0.5">
@@ -263,6 +265,7 @@ export function Layout() {
             </button>
             <span className="hidden text-xs text-muted md:inline">我的工作空间</span>
             <div className="ml-auto flex items-center gap-3">
+              <ReviewReminder />
               <RunningTimer />
               <button
                 aria-label="搜索或执行命令"
@@ -303,7 +306,7 @@ export function Layout() {
         {!immersive && (
           <nav
             aria-label="移动导航"
-            className="flex shrink-0 justify-around border-t border-[var(--border)] bg-[var(--background)] pb-[env(safe-area-inset-bottom)] md:hidden"
+            className="flex shrink-0 justify-around border-t border-[var(--border)] bg-[var(--background)] md:hidden"
           >
             {[primary[0], primary[3], views[2], primary[2]].map(({ to, label, icon: Icon }) => (
               <Link
