@@ -35,10 +35,5 @@
     "active": true,
     "targets": ["dmg", "app"],
     "icon": ["icons/icon.icns", "icons/icon.png"]
-  },
-  "plugins": {
-    "global-shortcut": {
-      "description": "Quick Capture"
-    }
   }
 }

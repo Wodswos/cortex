@@ -167,7 +167,7 @@ export function Layout() {
   }, [setCommand, setCapture, store, immersive]);
   if (phase === 'loading')
     return (
-      <div className="grid h-dvh place-items-center">
+      <div className="grid h-full place-items-center">
         <div className="space-y-3 text-center text-sm text-muted">
           <span>{error || '正在打开工作空间…'}</span>
           {error && (
@@ -190,7 +190,7 @@ export function Layout() {
       </Link>
     ));
   return (
-    <div className="flex h-dvh overflow-hidden bg-[var(--background)]">
+    <div className="flex h-full overflow-hidden bg-[var(--background)]">
       {!immersive && (
         <>
           {navigationOpen && (
@@ -203,7 +203,7 @@ export function Layout() {
           <aside
             className={cn(
               'workspace-sidebar flex-col px-3 py-5',
-              navigationOpen ? 'fixed inset-y-0 left-0 z-50 flex' : 'hidden md:flex',
+              navigationOpen ? 'fixed top-[env(safe-area-inset-top)] bottom-[env(safe-area-inset-bottom)] left-[env(safe-area-inset-left)] z-50 flex' : 'hidden md:flex',
             )}
           >
             <Link to="/" className="mb-6 flex shrink-0 items-center gap-2.5 px-3">
@@ -303,7 +303,7 @@ export function Layout() {
         {!immersive && (
           <nav
             aria-label="移动导航"
-            className="flex shrink-0 justify-around border-t border-[var(--border)] bg-[var(--background)] pb-[env(safe-area-inset-bottom)] md:hidden"
+            className="flex shrink-0 justify-around border-t border-[var(--border)] bg-[var(--background)] md:hidden"
           >
             {[primary[0], primary[3], views[2], primary[2]].map(({ to, label, icon: Icon }) => (
               <Link

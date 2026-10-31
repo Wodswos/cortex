@@ -8,6 +8,11 @@ const config: CapacitorConfig = {
   appName: 'Cortex',
   webDir: 'www',
   ...(remote ? { server: { url: remote, cleartext: false } } : {}),
-  ios: { contentInset: 'always', backgroundColor: '#09090f' },
+  // The web app owns safe-area padding and scrolls individual panes. Letting
+  // WKWebView add another inset/scroll container shifts the entire application.
+  ios: { contentInset: 'never', scrollEnabled: false },
+  // Native networking owns the server's HttpOnly session cookie. Browser CORS
+  // and third-party cookie rules must not turn the bundled app into a login loop.
+  plugins: { CapacitorHttp: { enabled: true }, Keyboard: { resize: 'native' } },
 };
 export default config;
