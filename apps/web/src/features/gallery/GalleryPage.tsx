@@ -35,7 +35,8 @@ export default function GalleryPage() {
   const nodeCount = countNodes(g.tree);
 
   const importRoadmap = () => {
-    const root = store.createTask({ title: g.title, notes: g.description, status: 'todo' });
+    const root = store.createProject(g.title);
+    store.updateTask(root.id, { notes: g.description });
     const items = buildImportTasks(g.tree, root.id);
     const idByKey = new Map<string, string>([[root.id, root.id]]);
     for (const it of items) {

@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router';
 import {
   DndContext, DragEndEvent, PointerSensor, useSensor, useSensors, useDraggable, useDroppable,
 } from '@dnd-kit/core';
@@ -7,7 +8,8 @@ import { cn, Badge } from '@cortex/ui';
 import {
   QuadrantKey, QUADRANTS, Task, matrixTasks, quadrantOf, subtreeProgress, buildChildrenMap, quadrantToPriority,
 } from '@cortex/core';
-import { useCortex, useCortexData } from '@cortex/crdt';
+import { useCortex } from '@cortex/crdt';
+import { useTaskViewData } from '../useTaskViewData';
 import { useUI } from '@/state/ui';
 import { DueBadge, PriorityDot, StatusBadge } from '@/shared/components';
 
@@ -20,13 +22,15 @@ const QUADRANT_STYLE: Record<QuadrantKey, { glow: string; chip: string }> = {
 };
 
 export function MatrixView() {
-  const data = useCortexData();
+  const data = useTaskViewData();
+  const [params] = useSearchParams();
+  const projectId = params.get('project');
   const store = useCortex();
   const ui = useUI();
   const [now] = useState(() => new Date());
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
-  const tasks = useMemo(() => matrixTasks(data.tasks, now), [data.tasks, now]);
+  const tasks = useMemo(() => matrixTasks(data.tasks, now, data.settings.completedDisplay !== 'hidden'), [data.tasks, now, data.settings.completedDisplay]);
   const childrenMap = useMemo(() => buildChildrenMap(data.tasks), [data.tasks]);
   // 任意层级的任务都进矩阵(子任务设了重要/紧急同样该被看见),按到期先后排序
   const byQ = useMemo(() => {
@@ -35,7 +39,7 @@ export function MatrixView() {
       map[quadrantOf(t)].push(t);
     }
     for (const arr of Object.values(map)) {
-      arr.sort((a, b) => (a.dueAt ?? Infinity) - (b.dueAt ?? Infinity) || a.createdAt - b.createdAt);
+      arr.sort((a, b) => Number(a.status === 'done') - Number(b.status === 'done') || (a.dueAt ?? Infinity) - (b.dueAt ?? Infinity) || a.createdAt - b.createdAt);
     }
     return map;
   }, [tasks]);
@@ -60,15 +64,14 @@ export function MatrixView() {
         <div className="grid grid-cols-1 gap-2 md:grid-cols-2 md:gap-3" style={{ maxWidth: 1200 }}>
           {QUADRANTS.map((q) => (
             <QuadrantCell key={q.key} quadrant={q} tasks={byQ[q.key]} childrenMap={childrenMap} onNew={() => {
-              const siblings = tasks.filter((t) => quadrantOf(t) === q.key && t.parentId == null);
-              store.createTask({ title: '', status: 'todo', important: q.important, urgent: q.urgent, order: siblings.length * 1000 });
-              const created = store.getData().tasks.at(-1);
-              if (created) ui.selectTask(created.id);
+              const siblings = tasks.filter((t) => t.parentId === projectId);
+              const created = store.createTask({ title: '', status: 'todo', parentId: projectId, important: q.important, urgent: q.urgent, order: Math.max(-1000, ...siblings.map((task) => task.order)) + 1000 });
+              ui.selectTask(created.id);
             }} />
           ))}
         </div>
         <div className="mt-3 px-1 text-[10px] text-muted/60">
-          拖动任务在象限间移动 = 改写「重要/紧急」 · 双击象限空白新建 · 显示所有未完成任务(含子任务),按到期先后排序
+          拖动任务在象限间移动 = 改写「重要/紧急」 · 双击象限空白新建 · 未完成任务优先，已完成项跟随右上角设置
         </div>
       </DndContext>
     </div>

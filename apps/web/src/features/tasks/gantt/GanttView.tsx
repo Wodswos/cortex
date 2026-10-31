@@ -4,11 +4,13 @@ import { CalendarClock, ChevronRight, Minus, Plus, Folder } from 'lucide-react';
 import { cn } from '@cortex/ui';
 import {
   Task, activeTasks, buildChildrenMap, taskRange, startOfWeek, startOfDay, addDays, fmtHM, WEEKDAY_ZH, weekdayOf, calendarDaysBetween, calendarPosition, timeAtCalendarPosition,
-  taskViewStatus, TaskViewStatus, priorityOf, isStructural,
+  taskViewStatus, TaskViewStatus, priorityOf, isStructural, fullyDoneIds,
 } from '@cortex/core';
-import { useCortex, useCortexData } from '@cortex/crdt';
+import { useCortex } from '@cortex/crdt';
+import { useTaskViewData } from '../useTaskViewData';
 import { useUI } from '@/state/ui';
 import { TaskCheckbox, PRIORITY_VAR } from '@/shared/components';
+import { ganttDragPatch, ganttDragRange, type GanttDragMode } from './drag';
 
 /**
  * 甘特图:任务树 × 天轴。
@@ -43,7 +45,7 @@ interface Row {
 
 /** 条的拖拽:move = 整体平移;start/end = 伸缩开始/截止端(deltaMin 已吸附) */
 interface BarDrag {
-  mode: 'move' | 'start' | 'end';
+  mode: GanttDragMode;
   id: string;
   x0: number;
   deltaMin: number;
@@ -86,11 +88,12 @@ function fmtDeltaMin(min: number): string {
 }
 
 export function GanttView() {
-  const data = useCortexData();
+  const data = useTaskViewData();
   const store = useCortex();
   const ui = useUI();
   const collapsed = useUI((s) => s.collapsed);
   const [params] = useSearchParams();
+  const projectId = params.get('project');
   const location = useLocation();
   const scope = params.get('scope');
   const weekStartsOn = data.settings.weekStartsOn;
@@ -104,6 +107,7 @@ export function GanttView() {
     }
   }, [scope, weekStartsOn, location.key]);
   const [dragging, setDragging] = useState<BarDrag | null>(null);
+  const dragRef = useRef<BarDrag | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   /** 天宽缩放档位(1/2/4/8):放大后时间轴更细,才拖得动分钟 */
   const [zoom, setZoom] = useState(1);
@@ -133,13 +137,14 @@ export function GanttView() {
   );
   const childrenMap = useMemo(() => buildChildrenMap(tasks), [tasks]);
   const byId = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
+  const hiddenDone = useMemo(() => data.settings.completedDisplay === 'hidden' ? fullyDoneIds(tasks) : null, [tasks, data.settings.completedDisplay]);
 
   /** 行 = 自身有日期且与窗口重叠的任务 + 其祖先链(祖先无日期则只作分组行,不画条) */
   const rows = useMemo(() => {
     // 1) 与窗口重叠的任务集合(只认显式日期)
     const overlap = new Set<string>();
     for (const t of tasks) {
-      if (!hasDates(t) || isStructural(t)) continue; // 结构节点无排期,不产生条
+      if (!hasDates(t) || isStructural(t) || hiddenDone?.has(t.id)) continue; // 结构节点无排期,不产生条
       const r = taskRange(t);
       if (r.start < winEndTime && r.end >= winStartTime) overlap.add(t.id);
     }
@@ -166,9 +171,9 @@ export function GanttView() {
         for (const c of childrenMap.get(t.id) ?? []) walk(c, visible.has(t.id) ? depth + 1 : depth, groupBase);
       }
     };
-    for (const root of childrenMap.get(null) ?? []) walk(root, 0, out.length);
+    for (const root of childrenMap.get(projectId) ?? []) walk(root, 0, out.length);
     return out;
-  }, [tasks, childrenMap, byId, winStartTime, winEndTime, collapsed]);
+  }, [tasks, childrenMap, byId, projectId, hiddenDone, winStartTime, winEndTime, collapsed]);
 
   /** 未排期任务(无开始/截止):从底部坞拖到图上某一天即完成排期 */
   const unscheduled = useMemo(
@@ -180,7 +185,6 @@ export function GanttView() {
   /** 列宽 = max(44, (容器宽 - 名字列) / 天数) × 缩放档位 */
   const fitPerDay = Math.max(MIN_PX_PER_DAY, boxW > NAME_W + 120 ? (boxW - NAME_W - 8) / days : MIN_PX_PER_DAY);
   const pxPerDay = fitPerDay * zoom;
-  const pxPerMin = pxPerDay / 1440;
   const xOf = (t: number) => calendarPosition(t, winStartTime) * pxPerDay;
   const todayX = xOf(Date.now());
   const todayIdx = calendarDaysBetween(winStartTime, Date.now());
@@ -192,42 +196,42 @@ export function GanttView() {
 
   // ---------- 条:平移 / 两端伸缩(按分钟吸附) ----------
   const beginBarDrag = (e: React.PointerEvent, r: Row, mode: BarDrag['mode']) => {
-    if (!r.dated) return; // 无时间的分组行没有条,不可拖
+    if (!r.dated || e.button !== 0) return; // 无时间的分组行没有条,不可拖
     if (mode !== 'move') e.stopPropagation(); // 把手不能冒泡成整体平移
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    setDragging({ mode, id: r.task.id, x0: e.clientX, deltaMin: 0, visStart: r.start, visEnd: r.end });
+    const next = { mode, id: r.task.id, x0: e.clientX, deltaMin: 0, visStart: r.start, visEnd: r.end };
+    dragRef.current = next;
+    setDragging(next);
   };
-  const onBarPointerMove = (e: React.PointerEvent) => {
-    if (!dragging) return;
-    const positionDelta = (e.clientX - dragging.x0) / pxPerDay;
+  const projectBarDrag = (dragging: BarDrag, clientX: number): BarDrag => {
+    const positionDelta = (clientX - dragging.x0) / pxPerDay;
     const anchor = dragging.mode === 'end' ? dragging.visEnd : dragging.visStart;
     const raw = (timeAtCalendarPosition(calendarPosition(anchor, winStartTime) + positionDelta, winStartTime) - anchor) / 60000;
     let d = Math.round(raw / SNAP_MIN) * SNAP_MIN; // 吸附到 5 分钟
     const spanMin = Math.max(0, Math.round((dragging.visEnd - dragging.visStart) / 60000));
     if (dragging.mode === 'start') d = Math.min(d, spanMin); // 开始不许拖过截止
     if (dragging.mode === 'end') d = Math.max(d, -spanMin); // 截止不许拖过开始
-    if (d !== dragging.deltaMin) setDragging({ ...dragging, deltaMin: d });
+    return { ...dragging, deltaMin: d };
   };
-  const onBarPointerUp = () => {
-    if (!dragging) return;
-    const t = tasks.find((x) => x.id === dragging.id);
-    const dms = dragging.deltaMin * 60_000;
+  const onBarPointerMove = (e: React.PointerEvent) => {
+    if (!dragRef.current) return;
+    const next = projectBarDrag(dragRef.current, e.clientX);
+    dragRef.current = next;
+    setDragging(next);
+  };
+  const cancelBarDrag = () => { dragRef.current = null; setDragging(null); };
+  const onBarPointerUp = (e: React.PointerEvent) => {
+    if (!dragRef.current) return;
+    const dragging = projectBarDrag(dragRef.current, e.clientX);
+    const t = store.getData().tasks.find((x) => x.id === dragging.id && !x.deletedAt);
     if (t && dragging.deltaMin !== 0) {
-      if (dragging.mode === 'move') {
-        // 平移:只动"本来就有"的那端,不把"只设了截止"的任务变成显式开始
-        const patch: Partial<Task> = {};
-        if (t.startAt != null) patch.startAt = t.startAt + dms;
-        if (t.dueAt != null) patch.dueAt = t.dueAt + dms;
-        store.updateTask(t.id, patch);
-      } else if (dragging.mode === 'start') {
-        store.updateTask(t.id, { startAt: Math.min(dragging.visStart + dms, dragging.visEnd) });
-      } else {
-        store.updateTask(t.id, { dueAt: Math.max(dragging.visEnd + dms, dragging.visStart) });
-      }
+      const range = ganttDragRange({ start: dragging.visStart, end: dragging.visEnd }, dragging.mode, dragging.deltaMin);
+      store.stopUndoCapture();
+      store.updateTask(t.id, ganttDragPatch(t, range, dragging.mode));
       store.stopUndoCapture();
       suppressClick.current = true; // 拖完不吃 click(不弹详情)
     }
-    setDragging(null);
+    cancelBarDrag();
   };
 
   // ---------- 行内空白:按下为一端,拖到另一端松开 = 设定范围(按天) ----------
@@ -404,11 +408,10 @@ export function GanttView() {
             const vs = taskViewStatus(r.task);
             const p = priorityOf(r.task);
             const pColor = PRIORITY_VAR[p];
-            const deltaMs = isDragging ? dragging!.deltaMin * 60000 : 0;
+            const visibleRange = isDragging
+              ? ganttDragRange({ start: dragging.visStart, end: dragging.visEnd }, dragging.mode, dragging.deltaMin)
+              : { start: r.start, end: r.end };
             const barW = Math.max(8, xOf(r.end) - xOf(r.start));
-            const leftAdj = isDragging && dragging!.mode !== 'end' ? xOf(r.start + deltaMs) - xOf(r.start) : 0;
-            const rightAdj = isDragging && dragging!.mode !== 'start' ? xOf(r.end + deltaMs) - xOf(r.end) : 0;
-            const widthAdj = rightAdj - leftAdj;
             const hasKids = (childrenMap.get(r.task.id)?.length ?? 0) > 0;
             return (
               <React.Fragment key={r.task.id}>
@@ -489,9 +492,12 @@ export function GanttView() {
                     {/* 无时间的行不画条(只作分组容器):曾经的"子树聚合细条"会被误读成排期 */}
                     {r.dated && (
                       <div
+                        data-gantt-bar={r.task.id}
                         onPointerDown={(e) => beginBarDrag(e, r, 'move')}
                         onPointerMove={onBarPointerMove}
                         onPointerUp={onBarPointerUp}
+                        onPointerCancel={cancelBarDrag}
+                        onLostPointerCapture={cancelBarDrag}
                         onClick={() => {
                           if (suppressClick.current) {
                             suppressClick.current = false;
@@ -501,13 +507,13 @@ export function GanttView() {
                         }}
                         className={cn(
                           'absolute top-1/2 flex -translate-y-1/2 items-center overflow-hidden rounded-md text-[10px] text-white shadow-sm',
-                          'h-5 cursor-grab active:cursor-grabbing',
+                          'h-5 cursor-grab touch-none select-none active:cursor-grabbing',
                           vs.kind === 'done' && 'text-white/80',
                           isDragging && 'shadow-lg ring-2 ring-white/70',
                         )}
                         style={{
-                          left: xOf(r.start) + leftAdj,
-                          width: Math.max(8, barW + widthAdj),
+                          left: xOf(visibleRange.start),
+                          width: Math.max(8, xOf(visibleRange.end) - xOf(visibleRange.start)),
                           // 整条无边框:未开始 = 浅色透明的优先级色;已完成 = 绿色(完成态优先于优先级色);其余 = 实心优先级色
                           background:
                             vs.kind === 'done'
@@ -517,7 +523,7 @@ export function GanttView() {
                                 : pColor,
                           color: vs.kind === 'planned' ? pColor : '#fff',
                         }}
-                        title={`${r.task.title || 'Untitled'} · ${p} · ${vs.label} · ${fmtMD(r.start)} ${fmtHM(r.start)} ~ ${fmtMD(r.end)} ${fmtHM(r.end)}${isDragging && dragging ? ` → ${dragging.mode === 'move' ? '平移' : dragging.mode === 'start' ? '开始端' : '截止端'} ${fmtDeltaMin(dragging.deltaMin)}` : ''}`}
+                        title={`${r.task.title || 'Untitled'} · ${p} · ${vs.label} · ${fmtMD(visibleRange.start)} ${fmtHM(visibleRange.start)} ~ ${fmtMD(visibleRange.end)} ${fmtHM(visibleRange.end)}${isDragging && dragging ? ` → ${dragging.mode === 'move' ? '平移' : dragging.mode === 'start' ? '开始端' : '截止端'} ${fmtDeltaMin(dragging.deltaMin)}` : ''}`}
                       >
                         {barW > 60 && (
                           <span className="truncate px-2 leading-none">{r.task.title || 'Untitled'}</span>

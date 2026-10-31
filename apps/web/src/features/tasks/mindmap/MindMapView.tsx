@@ -52,6 +52,7 @@ import {
   fullyDoneIds,
   QuadrantKey,
   isStructural,
+  isProject,
   descendantsOf,
   workSignals,
   workProgress,
@@ -692,7 +693,7 @@ function MindMapInner({
       nextNodes.push({
         id: task.id,
         type: 'task',
-        draggable: !previousNodes.get(task.id)?.data.editing,
+        draggable: !previousNodes.get(task.id)?.data.editing && !(rootTaskId === task.id && isProject(task)),
         position: { x: g.x, y: g.y },
         selected: exclusive ? task.id === exclusive : prevSelected.has(task.id),
         data: {
@@ -754,6 +755,7 @@ function MindMapInner({
     refocusWrapper,
     progress,
     signals,
+    rootTaskId,
   ]);
 
   // 校正视口的情形:初次挂载、切换根任务、根任务显隐变化、折叠/展开子树、已完成显隐切换(图变小自动收拢视口);
@@ -795,6 +797,8 @@ function MindMapInner({
     const rel = (node.position.y + dh / 2 - (t.position.y + th / 2)) / th;
     if (rel < -0.35) return { targetId: t.id, mode: 'before' };
     if (rel > 0.35) return { targetId: t.id, mode: 'after' };
+    if (!canReparent(node.id, t.id === VIRTUAL_ROOT_ID ? null : t.id, childrenMap))
+      return { targetId: null, mode: 'child' };
     return { targetId: t.id, mode: 'child' };
   };
 
@@ -1258,12 +1262,13 @@ export function MindMapView() {
   const data = useCortexData();
   const store = useCortex();
   const [params, setParams] = useSearchParams();
+  const projectId = params.get('project');
   // 根任务进 URL(?root=<id>):刷新/分享/回退都保留当前视图
   const rootTaskId = params.get('root') ?? params.get('project');
   const focusParam = params.get('mindFocus');
   const focusMode: WorkFocus = WORK_FOCUS.includes(focusParam as WorkFocus)
     ? (focusParam as WorkFocus)
-    : 'current';
+    : projectId ? 'all' : 'current';
   const setFocusMode = (mode: WorkFocus) => {
     const next = new URLSearchParams(params);
     next.set('mindFocus', mode);
@@ -1318,7 +1323,7 @@ export function MindMapView() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="relative z-10 flex shrink-0 flex-wrap items-center gap-1.5 border-b border-[var(--border)] px-4 py-2 md:px-6">
+      {!projectId && <div className="relative z-10 flex shrink-0 flex-wrap items-center gap-1.5 border-b border-[var(--border)] px-4 py-2 md:px-6">
         <button
           onClick={() => setRootTaskId(null)}
           className={cn(
@@ -1394,7 +1399,7 @@ export function MindMapView() {
             </div>
           )}
         </div>
-      </div>
+      </div>}
       <ReactFlowProvider>
         <MindMapInner rootTaskId={rootTaskId} focusMode={focusMode} onFocusChange={setFocusMode} />
       </ReactFlowProvider>

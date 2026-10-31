@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { Link } from 'react-router';
-import { Folder, GripVertical } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router';
+import { Folder, GripVertical, Plus } from 'lucide-react';
 import {
   DndContext,
   KeyboardSensor,
@@ -17,13 +17,43 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { activeTasks, gapTooSmall, isStructural, newOrder, sortSiblings, type Task } from '@cortex/core';
+import { activeTasks, gapTooSmall, isProject, newOrder, sortSiblings, type Task } from '@cortex/core';
 import { useCortex } from '@cortex/crdt';
-import { cn } from '@cortex/ui';
+import { cn, Dialog, DialogContent, Input, Button } from '@cortex/ui';
+import { isComposing } from '@/shared/ime';
+import { projectView, rememberProjectView, useProjectViewMemory, type TaskViewKey } from '@/features/tasks/projectViews';
 
 export function ProjectList({ projects, selectedId }: { projects: Task[]; selectedId: string | null }) {
   const store = useCortex();
+  const navigate = useNavigate();
+  const memory = useProjectViewMemory();
   const [status, setStatus] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const createdId = useRef<string | null>(null);
+  const create = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!name.trim() || busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      if (!createdId.current) {
+        store.stopUndoCapture();
+        createdId.current = store.createProject(name).id;
+        store.stopUndoCapture();
+      }
+      await store.flushPersistence();
+      rememberProjectView(store.userId, createdId.current, 'list');
+      navigate(`/tasks?project=${encodeURIComponent(createdId.current)}`);
+      setCreating(false);
+    } catch {
+      setError('项目保存失败，请重试保存');
+    } finally {
+      setBusy(false);
+    }
+  };
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -35,7 +65,7 @@ export function ProjectList({ projects, selectedId }: { projects: Task[]; select
       .sort(sortSiblings);
     const source = roots.find((task) => task.id === active.id);
     const target = roots.find((task) => task.id === over.id);
-    if (!source || !target || !isStructural(source) || !isStructural(target)) return;
+    if (!source || !target || !isProject(source) || !isProject(target)) return;
     const from = roots.indexOf(source),
       to = roots.indexOf(target);
     const others = roots.filter((task) => task.id !== source.id);
@@ -56,6 +86,22 @@ export function ProjectList({ projects, selectedId }: { projects: Task[]; select
   };
   return (
     <>
+      <div className="workspace-section flex items-center justify-between">
+        <span>项目</span>
+        <button
+          aria-label="新建项目"
+          title="新建项目"
+          onClick={() => {
+            createdId.current = null;
+            setName('');
+            setError('');
+            setCreating(true);
+          }}
+          className="grid h-6 w-6 place-items-center rounded text-muted hover:bg-[var(--surface)] hover:text-foreground"
+        >
+          <Plus size={14} />
+        </button>
+      </div>
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -80,7 +126,7 @@ export function ProjectList({ projects, selectedId }: { projects: Task[]; select
           <nav aria-label="项目" className="min-h-0 max-h-[30vh] space-y-0.5 overflow-y-auto">
             {projects.length ? (
               projects.map((task) => (
-                <ProjectRow key={task.id} task={task} selected={selectedId === task.id} />
+                <ProjectRow key={task.id} task={task} view={projectView(memory, task.id)} selected={selectedId === task.id} />
               ))
             ) : (
               <div className="px-3 py-2 text-xs text-muted">项目分组会显示在这里</div>
@@ -93,11 +139,33 @@ export function ProjectList({ projects, selectedId }: { projects: Task[]; select
           {status}
         </span>
       )}
+      <Dialog open={creating} onOpenChange={(open) => { if (!busy) setCreating(open); }}>
+        <DialogContent title="新建项目" className="w-[min(92vw,400px)]">
+          <form onSubmit={(event) => void create(event)} className="space-y-4">
+            <label className="block space-y-2 text-sm">
+              <span>项目名称</span>
+              <Input
+                autoFocus
+                value={name}
+                disabled={busy || !!createdId.current}
+                onChange={(event) => setName(event.target.value)}
+                onKeyDown={(event) => { if (event.key === 'Enter' && isComposing(event)) event.preventDefault(); }}
+                placeholder="例如：产品改版"
+              />
+            </label>
+            {error && <p role="alert" className="text-xs text-[var(--danger)]">{error}</p>}
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" disabled={busy} onClick={() => setCreating(false)}>取消</Button>
+              <Button type="submit" disabled={!name.trim() || busy}>{busy ? '正在保存…' : createdId.current ? '重试保存' : '创建项目'}</Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
 
-function ProjectRow({ task, selected }: { task: Task; selected: boolean }) {
+function ProjectRow({ task, selected, view }: { task: Task; selected: boolean; view: TaskViewKey }) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
     useSortable({
       id: task.id,
@@ -113,7 +181,7 @@ function ProjectRow({ task, selected }: { task: Task; selected: boolean }) {
       )}
     >
       <Link
-        to={`/tasks?project=${encodeURIComponent(task.id)}`}
+        to={`/tasks?project=${encodeURIComponent(task.id)}&view=${view}`}
         aria-current={selected ? 'page' : undefined}
         className="workspace-nav min-w-0 flex-1"
       >

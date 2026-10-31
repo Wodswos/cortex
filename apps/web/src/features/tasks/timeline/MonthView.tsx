@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { cn } from '@cortex/ui';
-import { addDays, startOfWeek, dayKeyOf, WEEKDAY_ZH, isStructural, calendarDaysBetween } from '@cortex/core';
-import { useCortex, useCortexData } from '@cortex/crdt';
+import { activeTasks, addDays, startOfWeek, dayKeyOf, WEEKDAY_ZH, isStructural, calendarDaysBetween } from '@cortex/core';
+import { useCortex } from '@cortex/crdt';
+import { useTaskViewData } from '../useTaskViewData';
 import { useUI } from '@/state/ui';
 import { EVENT_KIND_STYLE } from '@/shared/components';
 
@@ -15,7 +16,7 @@ export function MonthView({
   onDateChange: (d: Date) => void;
   onCreateTask?: (dueAt: number, event: React.MouseEvent) => void;
 }) {
-  const data = useCortexData();
+  const data = useTaskViewData();
   const store = useCortex();
   const selectTask = useUI((s) => s.selectTask);
   const [dropDay, setDropDay] = useState<string | null>(null);
@@ -43,7 +44,7 @@ export function MonthView({
             color: EVENT_KIND_STYLE[event.kind].color,
           });
     }
-    for (const task of data.tasks) {
+    for (const task of activeTasks(data.tasks)) {
       if (
         task.deletedAt ||
         task.status === 'archived' ||

@@ -1,5 +1,5 @@
 import { Task, Priority } from './types';
-import { isStructural } from './tree';
+import { activeTasks, isStructural } from './tree';
 
 export type QuadrantKey = 'do' | 'plan' | 'delegate' | 'eliminate';
 
@@ -56,12 +56,12 @@ export function quadrantOf(task: Task): QuadrantKey {
   return 'eliminate';
 }
 
-/** 进入四象限的任务:未完成、todo/doing、无日期或 7 天内(见 DESIGN §4.3) */
-export function matrixTasks(tasks: Task[], now: Date): Task[] {
+/** 四象限任务:默认未完成,由视图设置决定是否一并显示已完成项。 */
+export function matrixTasks(tasks: Task[], now: Date, showDone = false): Task[] {
   // 不再按 7 天窗口过滤:远期有日期的任务也会在矩阵里消失,违背"设了时间就该看见"。
-  // 由视图按到期先后排序、限量展示。保留未完成判定;结构性节点(非 TODO)不进矩阵。
+  // 由视图按到期先后排序、限量展示;结构性节点(非 TODO)不进矩阵。
   void now;
-  return tasks.filter(
-    (t) => !t.deletedAt && !isStructural(t) && (t.status === 'todo' || t.status === 'doing'),
+  return activeTasks(tasks).filter(
+    (t) => !t.deletedAt && !isStructural(t) && (t.status === 'todo' || t.status === 'doing' || showDone && t.status === 'done'),
   );
 }

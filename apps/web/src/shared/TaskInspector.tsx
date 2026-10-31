@@ -1,7 +1,7 @@
 import React from 'react';
 import { Plus, X, MoreHorizontal, ChevronRight, CalendarDays, Flag, Folder } from 'lucide-react';
 import { cn } from '@cortex/ui';
-import { Task, ancestorsOf, isStructural, priorityOf, type Priority } from '@cortex/core';
+import { Task, ancestorsOf, isStructural, isProject, priorityOf, type Priority } from '@cortex/core';
 import { useCortex, useCortexData } from '@cortex/crdt';
 import { useUI } from '@/state/ui';
 import { TaskCheckbox, DateTimeField } from './components';
@@ -50,7 +50,7 @@ export function TaskInspector({
       )}
     >
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-[var(--border)] px-5">
-        <span className="text-xs text-muted">{node ? '项目分组' : '任务详情'}</span>
+        <span className="text-xs text-muted">{isProject(task) ? '项目详情' : node ? '分组详情' : '任务详情'}</span>
         <span role="status" aria-label="任务保存状态" className="ml-auto mr-3 text-[10px] text-muted">
           {draft.status}
         </span>

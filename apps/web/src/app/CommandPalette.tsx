@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router';
 import { Command } from 'cmdk';
 import {
   ListTodo, Timer, Activity, Inbox, LayoutDashboard, Settings, Plus, Play,
-  CalendarRange, LayoutGrid, GitBranch, Download, Search, Library,
+  CalendarRange, LayoutGrid, GitBranch, Download, Search, Library, BookOpen,
 } from 'lucide-react';
 import { useCortex, useCortexData } from '@cortex/crdt';
 import { activeTasks } from '@cortex/core';
@@ -89,6 +89,9 @@ export function CommandPalette() {
             </Item>
             <Item onSelect={go(() => navigate('/habits'))} icon={<Activity className="h-4 w-4" />}>
               习惯
+            </Item>
+            <Item onSelect={go(() => navigate('/reviews'))} icon={<BookOpen className="h-4 w-4" />}>
+              复盘 · 日报与周报
             </Item>
             <Item
               onSelect={go(() => {

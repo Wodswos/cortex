@@ -4,7 +4,7 @@ import { Play, Trash2, RotateCcw, Plus, X, ChevronRight, Flame, Folder } from 'l
 import { Button, Input, Textarea, Sheet, SheetContent, Badge, cn } from '@cortex/ui';
 import { useCortex, useCortexData } from '@cortex/crdt';
 import { useUI } from '../state/ui';
-import { ancestorsOf, buildChildrenMap, quadrantOf, Task, priorityOf, isStructural } from '@cortex/core';
+import { ancestorsOf, buildChildrenMap, quadrantOf, Task, priorityOf, isStructural, isProject } from '@cortex/core';
 import {
   TaskCheckbox,
   TagChip,
@@ -61,6 +61,7 @@ export function TaskSheet() {
   const quadrant = quadrantOf(task);
   const quadrantLabel = { do: '立即做', plan: '计划', delegate: '委托', eliminate: '淘汰' }[quadrant];
   const node = isStructural(task); // 结构节点:无完成态/状态/优先级/时间,详情里只保留类型、标签、备注、子任务
+  const project = isProject(task);
 
   return (
     <Sheet
@@ -70,7 +71,7 @@ export function TaskSheet() {
     >
       <SheetContent
         side={isMobile ? 'bottom' : 'right'}
-        title="任务详情"
+        title={project ? '项目详情' : node ? '分组详情' : '任务详情'}
         onInteractOutside={(event) => {
           event.preventDefault();
           draft.close(() => selectTask(null));
@@ -132,9 +133,10 @@ export function TaskSheet() {
           <div>
             <span className="text-xs text-muted">节点类型</span>
             <div className="mt-1.5">
-              <KindToggle value={node ? 'node' : 'todo'} onChange={(k) => store.setTaskKind(task.id, k)} />
+              {project ? <span className="inline-flex items-center gap-2 text-sm"><Folder size={14} />项目根节点</span>
+                : <KindToggle value={node ? 'node' : 'todo'} onChange={(k) => store.setTaskKind(task.id, k)} />}
             </div>
-            {node && (
+            {node && !project && (
               <div className="-mt-1 text-[10px] text-muted/60">
                 结构节点 = 分组/主题容器:没有完成勾选、状态、优先级与排期;转回 TODO 任务即恢复
               </div>

@@ -528,7 +528,7 @@ test('project drag order persists, keeps hierarchy and supports keyboard sorting
 test('week defaults to this week in Gantt while explicit views and matrix navigation remain available', async ({ page }) => {
   await page.goto('/tasks?scope=week');
   await ready(page);
-  await expect(page.getByRole('tab', { name: '甘特', exact: true })).toHaveAttribute('data-state', 'active');
+  await expect(page.getByRole('tab', { name: '甘特图', exact: true })).toHaveAttribute('data-state', 'active');
   const weekLink = page.getByRole('navigation', { name: '工作导航' }).getByRole('link', { name: '本周', exact: true });
   await expect(weekLink).toHaveAttribute('aria-current', 'page');
   const dates = page.locator('input[type="date"]');
@@ -543,7 +543,7 @@ test('week defaults to this week in Gantt while explicit views and matrix naviga
   await page.reload();
   await expect(page.getByRole('tab', { name: '列表', exact: true })).toHaveAttribute('data-state', 'active');
   await weekLink.click();
-  await expect(page.getByRole('tab', { name: '甘特', exact: true })).toHaveAttribute('data-state', 'active');
+  await expect(page.getByRole('tab', { name: '甘特图', exact: true })).toHaveAttribute('data-state', 'active');
   const matrix = page.getByRole('navigation', { name: '视图', exact: true }).getByRole('link', { name: '四象限', exact: true });
   await matrix.click();
   await expect(page).toHaveURL(/view=matrix/);
