@@ -71,7 +71,7 @@ export function dueReviews(reviews: Review[], settings: Settings, now = Date.now
 export function reviewMarkdown(review: Review, facts: ReviewFacts): string {
   const lines = [`# ${review.kind === 'daily' ? '日报' : '周报'} · ${review.periodStart}${review.kind === 'weekly' ? ` ～ ${dayKeyOf(addDays(dateFromDayKey(review.periodEnd), -1))}` : ''}`,
     '', `完成 ${facts.completed.length} 项任务 · 专注 ${facts.focusMin} 分钟`, '', '## 已完成',
-    ...facts.completed.map(task => `- ${task.title}（${task.project}）`), '', '## 进展与收获', review.highlights || '（未填写）',
+    ...facts.completed.map(task => `- ${task.title}（${task.project}）`), '', review.kind === 'daily' ? '## 计划与进展' : '## 进展与收获', review.highlights || '（未填写）',
     '', '## 阻碍与反思', review.friction || '（未填写）', '', '## 下一步', review.nextSteps || '（未填写）'];
   if (facts.pending.length) lines.push('', '## 到期未完成', ...facts.pending.map(task => `- ${task.title}（${task.project}）`));
   return lines.join('\n');

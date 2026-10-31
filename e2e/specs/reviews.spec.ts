@@ -26,7 +26,7 @@ test('daily reviews preserve IME drafts across immediate navigation, finalize fa
   await seed(page, { tasks: [{ id: 'report_done', title: 'Ship prototype', status: 'done', parentId: null, order: 0, tags: [], ownerId: 'fixture', createdAt: 1, updatedAt: 1, completedAt: doneAt }],
     sessions: [{ id: 'report_focus', taskId: 'report_done', startedAt: doneAt - 1800000, endedAt: doneAt, plannedMin: 30, actualMin: 25, mode: 'focus', completed: true, ownerId: 'fixture' }] });
   await page.goto(`/reviews?kind=daily&date=${date}`);
-  const highlight = page.getByRole('textbox', { name: '今天真正推进了什么？', exact: true });
+  const highlight = page.getByRole('textbox', { name: '今天需要推进什么／真正推进了什么？', exact: true });
   await expect(page.getByTestId('review-completed-count')).toHaveText('1项');
   await expect(page.getByTestId('review-focus-duration')).toHaveText('25m');
   if (browserName === 'chromium') {
@@ -71,7 +71,7 @@ test('opening periods creates no empty history; weekly review includes daily ent
   await page.getByRole('button', { name: '下一期复盘', exact: true }).click();
   await expect(page.getByLabel('复盘日期', { exact: true })).toHaveValue(date);
   await expect(page.getByRole('navigation', { name: '历史复盘' }).getByRole('link')).toHaveCount(0);
-  await page.getByRole('textbox', { name: '今天真正推进了什么？', exact: true }).fill('Important daily insight');
+  await page.getByRole('textbox', { name: '今天需要推进什么／真正推进了什么？', exact: true }).fill('Important daily insight');
   await page.getByRole('button', { name: '完成复盘', exact: true }).click();
   await page.getByRole('tab', { name: '周报', exact: true }).click();
   await expect(page.getByRole('heading', { name: '2026-10-19 ～ 2026-10-25', exact: true })).toBeVisible();
@@ -122,7 +122,7 @@ async function register(context: BrowserContext, label: string) {
 test('reviews sync between devices and are isolated between accounts', async ({ page, context, browser, baseURL }) => {
   const username = await register(context, 'owner');
   await page.goto(`/reviews?kind=daily&date=${date}`);
-  await page.getByRole('textbox', { name: '今天真正推进了什么？', exact: true }).fill('Private account reflection');
+  await page.getByRole('textbox', { name: '今天需要推进什么／真正推进了什么？', exact: true }).fill('Private account reflection');
   await page.getByRole('heading', { name: '复盘', exact: true }).click();
   await expect(page.getByRole('status', { name: '复盘保存状态' })).toHaveText('已保存');
   const otherDevice = await browser.newContext({ baseURL });
@@ -132,11 +132,11 @@ test('reviews sync between devices and are isolated between accounts', async ({ 
     expect(login.ok()).toBe(true);
     const devicePage = await otherDevice.newPage();
     await devicePage.goto(`/reviews?kind=daily&date=${date}`);
-    await expect(devicePage.getByRole('textbox', { name: '今天真正推进了什么？', exact: true })).toHaveValue('Private account reflection');
+    await expect(devicePage.getByRole('textbox', { name: '今天需要推进什么／真正推进了什么？', exact: true })).toHaveValue('Private account reflection');
     await register(otherAccount, 'other');
     const isolatedPage = await otherAccount.newPage();
     await isolatedPage.goto(`/reviews?kind=daily&date=${date}`);
-    await expect(isolatedPage.getByRole('textbox', { name: '今天真正推进了什么？', exact: true })).toHaveValue('');
+    await expect(isolatedPage.getByRole('textbox', { name: '今天需要推进什么／真正推进了什么？', exact: true })).toHaveValue('');
     await expect(isolatedPage.getByRole('navigation', { name: '历史复盘' }).getByRole('link')).toHaveCount(0);
   } finally { await otherDevice.close(); await otherAccount.close(); }
 });

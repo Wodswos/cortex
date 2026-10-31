@@ -36,7 +36,7 @@ export default function ReviewsPage() {
         <header className="mb-7 flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-xl font-semibold tracking-tight">复盘</h1>
-            <p className="mt-2 text-xs leading-5 text-muted">留一点时间，看清进展、阻碍和下一步。</p>
+            <p className="mt-2 text-xs leading-5 text-muted">先理清计划，再回看进展、阻碍和下一步。</p>
           </div>
           <Segmented value={kind} onValueChange={value => navigate(reviewPeriod(value as ReviewKind, dateFromDayKey(period.start), data.settings.weekStartsOn))}>
             <SegmentedList aria-label="复盘类型">
@@ -69,7 +69,7 @@ function ReviewEditor({ period, now }: { period: ReviewPeriod; now: number }) {
   const facts = completed && draft.review?.facts ? draft.review.facts : liveFacts;
   const weekly = period.kind === 'weekly';
   const questions: { field: ReviewTextField; title: string; prompt: string }[] = [
-    { field: 'highlights', title: weekly ? '本周真正推进了什么？' : '今天真正推进了什么？', prompt: weekly ? '哪些成果最有价值？哪件事比上周更进一步？' : '记一件有价值的进展，也可以是一点新的理解。' },
+    { field: 'highlights', title: weekly ? '本周真正推进了什么？' : '今天需要推进什么／真正推进了什么？', prompt: weekly ? '哪些成果最有价值？哪件事比上周更进一步？' : '先写今天最想推进的 1–3 件事，之后再补充实际进展和收获。' },
     { field: 'friction', title: '哪里卡住了，为什么？', prompt: '是依赖、目标不清，还是投入方式？下次可以怎样调整？' },
     { field: 'nextSteps', title: weekly ? '下周最重要的是什么？' : '明天最重要的一步是什么？', prompt: '写下 1–3 个具体行动，让下一次开始更轻松。' },
   ];
@@ -106,7 +106,7 @@ function ReviewEditor({ period, now }: { period: ReviewPeriod; now: number }) {
               {completed ? <><Check size={13} />已复盘</> : <><PencilLine size={13} />{draft.review || draft.dirty ? '草稿' : '待复盘'}</>}
             </span>
           </div>
-          <p className="mt-2 text-xs leading-5 text-muted">{completed ? '这份复盘已保存。工作回顾保留完成复盘时的记录。' : '不必写得完整，先写最值得记住的一件事。内容会自动保存。'}</p>
+          <p className="mt-2 text-xs leading-5 text-muted">{completed ? '这份复盘已保存。工作回顾保留完成复盘时的记录。' : weekly ? '不必写得完整，先写最值得记住的一件事。内容会自动保存。' : '开工前写下今天的计划，收工后补充进展与反思。内容会自动保存。'}</p>
           <p className="mt-3 text-xs text-muted lg:hidden">完成 {facts.completed.length} 项任务<span className="mx-2">·</span>专注 {fmtDuration(facts.focusMin)}</p>
         </div>
         <div className="space-y-8 px-5 py-6 sm:px-7">
