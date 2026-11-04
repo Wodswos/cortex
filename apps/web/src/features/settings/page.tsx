@@ -21,7 +21,7 @@ import { ACCENTS, Accent, generateICS, startOfDay, endOfDay, addDays, newId } fr
 import { api, useCortex, useCortexData } from '@cortex/crdt';
 import { useAuth } from '@/app/auth';
 import { useTheme } from '@/app/theme';
-import { requestNotifPermission, notifSupported } from '@cortex/platform';
+import { requestNotifPermission, getNotifPermission, nativeNotifSupported, onNotifPermissionChange } from '@cortex/platform';
 import { isComposing } from '@/shared/ime';
 
 export default function SettingsPage() {
@@ -35,6 +35,14 @@ export default function SettingsPage() {
   const [invites, setInvites] = useState<Awaited<ReturnType<typeof api.invites>>>([]);
   const [imported, setImported] = useState<string | null>(null);
   const [notifState, setNotifState] = useState('');
+  const nativeNotifications = nativeNotifSupported();
+  useEffect(() => {
+    let active = true;
+    const refresh = () => { void getNotifPermission().then(permission => { if (active) setNotifState(permission); }); };
+    refresh();
+    const remove = onNotifPermissionChange(refresh);
+    return () => { active = false; remove(); };
+  }, []);
   const [serverName, setServerName] = useState('');
   const [serverHost, setServerHost] = useState('');
   const [serverPassword, setServerPassword] = useState('');
@@ -433,18 +441,18 @@ export default function SettingsPage() {
           <CardContent>
             <div className="flex items-center justify-between gap-3">
               <div className="text-xs text-muted">
-                番茄结束/日程提醒。
-                {notifSupported() ? '浏览器通知' : '此环境不支持通知(iPhone PWA 需 HTTPS 安装)'}
+                {nativeNotifications ? '习惯到时提醒和专注结束提醒，可通过手机系统通知显示。' : '应用内提醒始终可用；浏览器通知需要安全访问方式和授权。'}
               </div>
               <Button
                 size="sm"
                 variant="secondary"
+                disabled={notifState === 'granted' || notifState === 'unsupported' || notifState === 'denied'}
                 onClick={async () => {
                   const r = await requestNotifPermission();
                   setNotifState(r);
                 }}
               >
-                授权
+                {notifState === 'granted' ? '已授权' : nativeNotifications ? '开启手机通知' : '授权'}
               </Button>
             </div>
             {notifState && (
@@ -454,7 +462,7 @@ export default function SettingsPage() {
                     <CircleCheck className="h-3.5 w-3.5 text-[var(--success)]" /> 已授权
                   </>
                 ) : (
-                  <>状态:{notifState}</>
+                  <>{notifState === 'denied' ? nativeNotifications ? '请在 iPhone「设置 → 通知 → Cortex」中允许通知。' : '通知已被禁用，请在浏览器设置中允许通知。' : notifState === 'unsupported' ? '当前环境仅支持应用内提醒。' : '尚未授权，点击按钮后可开启通知。'}</>
                 )}
               </div>
             )}

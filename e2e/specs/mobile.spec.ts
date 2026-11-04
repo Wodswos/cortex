@@ -2,6 +2,50 @@ import { test, expect } from '@playwright/test';
 
 test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 
+test('mobile drawer covers the app frame and keeps its contents inside safe areas', async ({ page }) => {
+  // Desktop browser emulation has zero safe-area insets. Exercise the same
+  // shared inset values that an iPhone supplies to both the frame and drawer.
+  await page.goto('/tasks');
+  await page.evaluate(() => {
+    document.documentElement.style.setProperty('--app-safe-area-top', '59px');
+    document.documentElement.style.setProperty('--app-safe-area-bottom', '34px');
+    document.documentElement.style.setProperty('--app-safe-area-left', '0px');
+    document.documentElement.style.setProperty('--app-safe-area-right', '0px');
+  });
+  await page.getByRole('button', { name: '打开导航' }).click();
+  const drawer = page.locator('.workspace-sidebar');
+  const backdrop = page.getByRole('button', { name: '关闭导航' });
+  for (const height of [844, 620]) {
+    await page.setViewportSize({ width: 390, height });
+    await expect.poll(async () => (await drawer.boundingBox())?.height).toBe(height);
+    const panel = (await drawer.boundingBox())!;
+    const overlay = (await backdrop.boundingBox())!;
+    expect(panel.y).toBe(0);
+    expect(panel.x).toBe(0);
+    expect(overlay).toEqual({ x: 0, y: 0, width: 390, height });
+    const brand = (await drawer.getByRole('link', { name: 'Cortex', exact: true }).boundingBox())!;
+    const account = (await drawer.getByRole('link', { name: '设置与账号', exact: true }).boundingBox())!;
+    expect(brand.y).toBeGreaterThanOrEqual(59);
+    expect(account.y + account.height).toBeLessThanOrEqual(height - 34);
+  }
+  await backdrop.click({ position: { x: 380, y: 100 } });
+  await expect(drawer).toBeHidden();
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+});
+
+test('mobile drawer follows the visible frame when browser chrome reduces the viewport', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window.visualViewport!, 'height', { get: () => 620 });
+  });
+  await page.goto('/tasks');
+  await page.getByRole('button', { name: '打开导航' }).click();
+  const drawer = (await page.locator('.workspace-sidebar').boundingBox())!;
+  const backdrop = (await page.getByRole('button', { name: '关闭导航' }).boundingBox())!;
+  expect(await page.evaluate(() => window.innerHeight)).toBe(844);
+  expect(drawer.y + drawer.height).toBe(620);
+  expect(backdrop.y + backdrop.height).toBe(620);
+});
+
 test('mobile task panes scroll without moving the app frame or navigation', async ({ page }) => {
   await page.goto('/settings');
   const tasks = Array.from({ length: 45 }, (_, index) => ({
