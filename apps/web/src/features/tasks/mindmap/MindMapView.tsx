@@ -52,7 +52,7 @@ import {
   type WorkFocus,
   type MindFont,
 } from '@cortex/core';
-import { useCortex, useCortexData } from '@cortex/crdt';
+import { useCortex } from '@cortex/crdt';
 import { useUI } from '@/state/ui';
 import { TaskInspector } from '@/shared/TaskInspector';
 import { AppearancePanel } from './AppearancePanel';
@@ -752,7 +752,7 @@ function MindMapInner({
               ['unscheduled', '重要未排期', signals.unscheduled.size, 'P0/P1 任务，尚无日期或未来日程'],
               ['all', '全图', null, '查看所有任务与分支'],
             ] as const
-          ).map(([mode, label, count, hint]) => (
+          ).filter(([mode]) => !range.scheduledOnly || mode !== 'unscheduled').map(([mode, label, count, hint]) => (
             <button
               key={mode}
               type="button"
@@ -921,14 +921,14 @@ function SortableRootChip({ task, active, onSelect }: { task: Task; active: bool
 }
 
 export function MindMapView() {
-  const data = useCortexData();
+  const data = useTaskViewData({ window: true });
   const store = useCortex();
   const [params, setParams] = useSearchParams();
   const projectId = params.get('project');
   // 根任务进 URL(?root=<id>):刷新/分享/回退都保留当前视图
   const rootTaskId = params.get('root') ?? params.get('project');
   const focusParam = params.get('mindFocus');
-  const focusMode: WorkFocus = WORK_FOCUS.includes(focusParam as WorkFocus)
+  const focusMode: WorkFocus = WORK_FOCUS.includes(focusParam as WorkFocus) && (focusParam !== 'unscheduled' || !!projectId || data.settings.savedViews.some(view => view.id === params.get('saved')))
     ? (focusParam as WorkFocus)
     : projectId || params.has('scope') ? 'all' : 'current';
   const setFocusMode = (mode: WorkFocus) => {

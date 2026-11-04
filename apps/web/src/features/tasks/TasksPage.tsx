@@ -37,12 +37,13 @@ export default function TasksPage() {
   const view = normalizeTaskView(requested) ?? (
     projectId ? projectView(memory, projectId) : scope === 'week' ? 'gantt' : 'list');
   useEffect(() => {
+    const unsupportedUndated = !projectId && !saved && scope === 'undated';
     const needsTimeRange = (!projectId || !!saved) && ['gantt', 'timeline'].includes(view) && !['today', 'week', 'month', 'custom'].includes(scope ?? '');
-    if (isTaskView(requested) && !needsTimeRange) return;
+    if (isTaskView(requested) && !needsTimeRange && !unsupportedUndated) return;
     setParams((previous) => {
       const next = new URLSearchParams(previous);
       next.set('view', view);
-      if (needsTimeRange) { next.set('scope', 'week'); next.delete('from'); next.delete('to'); }
+      if (needsTimeRange || unsupportedUndated) { next.set('scope', 'week'); next.delete('from'); next.delete('to'); }
       return next;
     }, { replace: true });
   }, [requested, view, projectId, saved?.id, scope, setParams]);

@@ -40,7 +40,7 @@ test('sidebar contains workspaces, project directory collapse persists and creat
   await expect(page.getByRole('navigation', { name: '移动导航', exact: true }).getByRole('link')).toHaveText(['当前任务', '收集箱', '本月日历']);
 });
 
-test('current workspace preserves the same custom window across its five views and keeps full-time and undated work accessible', async ({ page }) => {
+test('current workspace preserves the same custom window across its five views and keeps project backlog accessible', async ({ page }) => {
   const date = (day: number) => new Date(2026, 10, day, 12).getTime();
   await seed(page, { tasks: [task('project', { kind: 'node', project: true }), task('phase', { kind: 'node', parentId: 'project' }), task('matching', { parentId: 'phase', dueAt: date(3) }), task('overlap', { parentId: 'phase', startAt: date(1), dueAt: date(8) }), task('outside', { parentId: 'project', dueAt: date(20) }), task('undated', { parentId: 'project' }), task('finished', { status: 'done', parentId: 'project', dueAt: date(3) })] });
   await page.goto('/tasks?scope=custom&from=2026-11-03&to=2026-11-05&view=list');
@@ -66,11 +66,10 @@ test('current workspace preserves the same custom window across its five views a
   await expect(range(page)).toHaveValue('custom');
   await expect(dateField(page, '区间开始日期')).toHaveValue('2026-11-03');
   await expect(dateField(page, '区间结束日期')).toHaveValue('2026-11-05');
-  await range(page).selectOption('undated');
-  await expect(rows.getByText('undated', { exact: true })).toBeVisible();
-  await expect(rows.getByText('matching', { exact: true })).toHaveCount(0);
+  await expect(range(page).locator('option[value="undated"]')).toHaveCount(0);
   await range(page).selectOption('all');
   await expect(rows.getByText('outside', { exact: true })).toBeVisible();
+  await expect(rows.getByText('undated', { exact: true })).toHaveCount(0);
   await view(page, '甘特图').click();
   await expect(range(page)).toHaveValue('week');
   await view(page, '列表').click();

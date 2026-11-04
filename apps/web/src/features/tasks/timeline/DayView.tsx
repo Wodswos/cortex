@@ -13,7 +13,7 @@ import {
   activeTasks,
   isStructural,
 } from '@cortex/core';
-import { useCortex } from '@cortex/crdt';
+import { useCortex, useCortexData } from '@cortex/crdt';
 import { useTaskViewData } from '../useTaskViewData';
 import { useUI } from '@/state/ui';
 import { useTimer } from '@/focus/timer';
@@ -47,7 +47,8 @@ export function DayView({
   onDateChange: (d: Date) => void;
   onCreateTask?: (dueAt: number, event: React.PointerEvent) => void;
 }) {
-  const data = useTaskViewData();
+  const data = useTaskViewData({ ancestors: false });
+  const allData = useCortexData();
   const store = useCortex();
   const ui = useUI();
   const navigate = useNavigate();
@@ -93,7 +94,9 @@ export function DayView({
     [data.events, dayStart, dayEnd],
   );
 
-  const taskById = useMemo(() => new Map(data.tasks.map((t) => [t.id, t])), [data.tasks]);
+  // Calendar blocks keep their task link even when its task has no explicit
+  // start/due date and is therefore outside the current task pool.
+  const taskById = useMemo(() => new Map(allData.tasks.map((t) => [t.id, t])), [allData.tasks]);
 
   /** 今日待排任务:今天到期或无日期的 todo/doing,且今天还没排 */
   const unscheduled = useMemo(() => {
@@ -274,6 +277,7 @@ export function DayView({
             </div>
             <div
               ref={dayRef}
+              data-sidebar-swipe-ignore
               className={cn(
                 'relative rounded-xl border border-[var(--border)] bg-[var(--surface)]',
                 drag || selectRect ? 'cursor-grabbing' : 'cursor-copy',

@@ -107,6 +107,7 @@ export function ListView() {
   const { range } = useTaskWindow();
   const { start: rangeStart, days: rangeDays, scope: rangeScope } = range;
   const projectId = params.get('project');
+  const currentWorkspace = range.scheduledOnly;
   const [newTitle, setNewTitle] = useState('');
   const [saveStatus, setSaveStatus] = useState('');
   const saveGeneration = useRef(0);
@@ -134,7 +135,7 @@ export function ListView() {
   );
   const visibleTasks = useMemo(() => {
     const projectIds = projectId ? descendantsOf(projectId, allChildren).add(projectId) : null;
-    const pool = tasksInWindow(active.filter((task) => !projectIds || projectIds.has(task.id)), { scope: rangeScope, start: rangeStart, days: rangeDays });
+    const pool = tasksInWindow(active.filter((task) => !projectIds || projectIds.has(task.id)), { scope: rangeScope, start: rangeStart, days: rangeDays }, true, currentWorkspace);
     if (filter.kind === 'all') return pool;
     const byId = new Map(pool.map((task) => [task.id, task]));
     const keep = new Set<string>();
@@ -147,7 +148,7 @@ export function ListView() {
       }
     }
     return pool.filter((task) => keep.has(task.id));
-  }, [active, allChildren, projectId, rangeScope, rangeStart, rangeDays, filter, now]);
+  }, [active, allChildren, projectId, currentWorkspace, rangeScope, rangeStart, rangeDays, filter, now]);
   const childrenMap = useMemo(() => buildChildrenMap(visibleTasks), [visibleTasks]);
   const progressMap = useMemo(() => workProgress(active), [active]);
   // 隐藏模式:整棵子树都完成的行不再渲染(根级过滤在 groupRoots,子级在这里)

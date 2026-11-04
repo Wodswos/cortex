@@ -38,6 +38,15 @@ describe('workspace time windows', () => {
     expect(tasksInWindow(values, range, false).map((t) => t.id)).toEqual(['a']);
     expect(windowDueAt(range)).toBeUndefined();
   });
+  it('keeps only scheduled work and its ancestor context in the current workspace, even for all time', () => {
+    const range = { ...readTaskWindow(new URLSearchParams('scope=all'), new Date(2026, 10, 3), 1), scheduledOnly: true };
+    const values = [task('project', { kind: 'node' }), task('parent', { parentId: 'project' }), task('dated', { parentId: 'parent', dueAt: day('2026-11-03') }), task('undated', { parentId: 'project' }), task('other', { kind: 'node' })];
+    expect(tasksInWindow(values, range).map(value => value.id)).toEqual(['project', 'parent', 'dated']);
+    expect(tasksInWindow(values, range, false).map(value => value.id)).toEqual(['dated']);
+    expect(tasksInWindow(values, { ...range, scheduledOnly: false })).toEqual(values);
+    expect(windowDueAt(range, day('2026-11-03'))).toBe(day('2026-11-04') - 60000);
+    expect(readTaskWindow(new URLSearchParams('scope=undated'), new Date(2026, 10, 3), 1, false, false).scope).toBe('week');
+  });
   it('counts calendar days through daylight-saving transitions', () => {
     const previous = process.env.TZ;
     try {

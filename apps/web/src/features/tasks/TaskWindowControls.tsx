@@ -15,7 +15,8 @@ export function useTaskWindow(temporal = false) {
     window.addEventListener('focus', refresh);
     return () => { clearInterval(timer); window.removeEventListener('focus', refresh); };
   }, []);
-  const range = readTaskWindow(params, new Date(), settings.weekStartsOn, temporal);
+  const allowUndated = !!params.get('project') || settings.savedViews.some(view => view.id === params.get('saved'));
+  const range = { ...readTaskWindow(params, new Date(), settings.weekStartsOn, temporal, allowUndated), scheduledOnly: !allowUndated };
   const setRange = useCallback((start: number, days: number) => {
     if (window.location.pathname !== '/tasks') return;
     // Suspense can retain the previous view while the next one loads. Its render-time
@@ -57,7 +58,7 @@ export function TaskWindowControls({ temporal = false }: { temporal?: boolean })
         <option value="month">本月</option>
         <option value="custom">自定义区间</option>
         {!temporal && <option value="all">全部时间</option>}
-        {!temporal && <option value="undated">未排期</option>}
+        {!temporal && !range.scheduledOnly && <option value="undated">未排期</option>}
       </select>
       {dated && <div className="flex w-[330px] max-w-full items-center gap-1">
         <button aria-label="上一个时间段" title={`向前 ${range.days} 天`} onClick={() => shift(-1)} className="grid h-8 w-7 shrink-0 place-items-center rounded-md text-muted hover:bg-[var(--surface)] hover:text-foreground"><ChevronLeft size={15} /></button>

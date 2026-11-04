@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router';
 import {
   ListTodo,
@@ -90,12 +90,27 @@ const tools = [
   { to: '/habits', label: '习惯', icon: Activity },
 ];
 
+function blankSidebarSwipeTarget(target: EventTarget | null, frame: HTMLElement): boolean {
+  if (!(target instanceof HTMLElement) || !target.closest('main, header')) return false;
+  if (target.closest('button, a, input, textarea, select, label, [contenteditable]:not([contenteditable="false"]), [tabindex]:not([tabindex="-1"]), [role="button"], [role="dialog"], [role="slider"], [role="separator"], [draggable="true"], [data-row], [data-habit-row], [data-inspector], [data-destructive-dialog], [data-sidebar-swipe-ignore], [data-gantt-scroll], [data-calendar-week-date], [data-calendar-event], .react-flow, .xterm, svg, canvas, img, video')) return false;
+  // Text and controls retain their own selection, drag and tap behavior. Only
+  // the uncovered container surface may start the navigation gesture.
+  if ([...target.childNodes].some(node => node.nodeType === Node.TEXT_NODE && node.textContent?.trim())) return false;
+  for (let element: HTMLElement | null = target; element && element !== frame; element = element.parentElement) {
+    const style = getComputedStyle(element);
+    if (['auto', 'scroll'].includes(style.overflowX) && element.scrollWidth > element.clientWidth + 1) return false;
+    if (style.touchAction === 'none' || /\bpan-(x|left|right)\b/.test(style.touchAction)) return false;
+  }
+  return true;
+}
+
 export function Layout() {
   const { phase, user, error } = useAuth();
   const data = useCortexData();
   const store = useCortex();
   const location = useLocation();
   const [navigationOpen, setNavigationOpen] = useState(false);
+  const frameRef = useRef<HTMLDivElement>(null);
   const sidebar = useSidebarWidth();
   const setCommand = useUI((s) => s.setCommand);
   const setCapture = useUI((s) => s.setQuickCapture);
@@ -121,6 +136,49 @@ export function Layout() {
   useEffect(() => {
     setNavigationOpen(false);
   }, [location.pathname, location.search]);
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!frame || navigationOpen || immersive || phase === 'loading') return;
+    let swipe: { id: number; x: number; y: number; time: number; horizontal: boolean } | null = null;
+    const cancel = () => { swipe = null; };
+    const start = (event: TouchEvent) => {
+      cancel();
+      if (event.defaultPrevented || !window.matchMedia('(width < 48rem)').matches || event.touches.length !== 1 || !blankSidebarSwipeTarget(event.target, frame)) return;
+      const touch = event.touches[0]!;
+      swipe = { id: touch.identifier, x: touch.clientX, y: touch.clientY, time: performance.now(), horizontal: false };
+    };
+    const move = (event: TouchEvent) => {
+      if (!swipe || event.touches.length !== 1) { cancel(); return; }
+      const touch = event.touches[0]!;
+      const dx = touch.clientX - swipe.x, dy = Math.abs(touch.clientY - swipe.y);
+      if (touch.identifier !== swipe.id || dx < -12 || dy > (swipe.horizontal ? 36 : 14)) { cancel(); return; }
+      if (dx > 18 && dx > dy * 2) swipe.horizontal = true;
+      // Leave vertical scrolling alone. Suppress browser handling only after
+      // a blank-area gesture has a clear horizontal intent.
+      if (swipe.horizontal && event.cancelable) event.preventDefault();
+    };
+    const end = (event: TouchEvent) => {
+      const current = swipe;
+      cancel();
+      if (!current || event.touches.length || performance.now() - current.time > 700) return;
+      const touch = [...event.changedTouches].find(item => item.identifier === current.id);
+      if (!touch) return;
+      const dx = touch.clientX - current.x, dy = Math.abs(touch.clientY - current.y);
+      if (dx < 64 || dy > 36 || dx < dy * 2) return;
+      if (event.cancelable) event.preventDefault();
+      setNavigationOpen(true);
+    };
+    frame.addEventListener('touchstart', start, { passive: true });
+    frame.addEventListener('touchmove', move, { passive: false });
+    frame.addEventListener('touchend', end, { passive: false });
+    frame.addEventListener('touchcancel', cancel);
+    return () => {
+      frame.removeEventListener('touchstart', start);
+      frame.removeEventListener('touchmove', move);
+      frame.removeEventListener('touchend', end);
+      frame.removeEventListener('touchcancel', cancel);
+    };
+  }, [navigationOpen, immersive, phase]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (isComposing(event)) return;
@@ -148,7 +206,8 @@ export function Layout() {
       ) {
         event.preventDefault();
         setCapture(true);
-      } else if (event.key === 'Escape' && immersive) useTimer.getState().setImmersive(false);
+      } else if (event.key === 'Escape' && navigationOpen) setNavigationOpen(false);
+      else if (event.key === 'Escape' && immersive) useTimer.getState().setImmersive(false);
     };
     const capture = () => setCapture(true);
     window.addEventListener('keydown', onKey);
@@ -157,7 +216,7 @@ export function Layout() {
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('cortex:quick-capture', capture);
     };
-  }, [setCommand, setCapture, store, immersive]);
+  }, [setCommand, setCapture, store, immersive, navigationOpen]);
   if (phase === 'loading')
     return (
       <div className="grid h-full place-items-center">
@@ -183,21 +242,21 @@ export function Layout() {
       </Link>
     ));
   return (
-    <div className="flex h-full overflow-hidden bg-[var(--background)]">
+    <div ref={frameRef} className="flex h-full overflow-hidden bg-[var(--background)]">
       {!immersive && (
         <>
-          {navigationOpen && (
-            <button
-              aria-label="关闭导航"
-              className="fixed inset-x-0 top-0 z-40 h-[var(--app-height,100dvh)] bg-black/20 md:hidden"
-              onClick={() => setNavigationOpen(false)}
-            />
-          )}
+          <button
+            aria-label="关闭导航"
+            tabIndex={navigationOpen ? 0 : -1}
+            className={cn('workspace-navigation-backdrop fixed inset-x-0 top-0 z-40 h-[var(--app-height,100dvh)] bg-black/20 md:hidden', navigationOpen && 'workspace-navigation-backdrop-open')}
+            onClick={() => setNavigationOpen(false)}
+          />
           <aside
+            id="workspace-sidebar"
             style={{ '--sidebar-width': `${sidebar.width}px` } as React.CSSProperties}
             className={cn(
-              'workspace-sidebar flex-col px-3 py-5',
-              navigationOpen ? 'workspace-sidebar-open flex' : 'hidden md:flex',
+              'workspace-sidebar flex flex-col px-3 py-5',
+              navigationOpen && 'workspace-sidebar-open',
             )}
           >
             <SidebarResize width={sidebar.width} onChange={sidebar.setWidth} />
@@ -252,6 +311,8 @@ export function Layout() {
           <header className="flex h-12 shrink-0 items-center gap-3 border-b border-[var(--border)] px-4 lg:px-6">
             <button
               aria-label="打开导航"
+              aria-controls="workspace-sidebar"
+              aria-expanded={navigationOpen}
               onClick={() => setNavigationOpen(true)}
               className="text-muted md:hidden"
             >

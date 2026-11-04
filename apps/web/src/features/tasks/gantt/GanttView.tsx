@@ -95,6 +95,7 @@ export function GanttView() {
   const [params] = useSearchParams();
   const projectId = params.get('project');
   const { range, setRange } = useTaskWindow(true);
+  const showUnscheduled = !range.scheduledOnly;
   const winStart = new Date(range.start);
   const winDays = range.days;
   const [dragging, setDragging] = useState<BarDrag | null>(null);
@@ -202,8 +203,8 @@ export function GanttView() {
 
   /** 未排期任务(无开始/截止):从底部坞拖到图上某一天即完成排期 */
   const unscheduled = useMemo(
-    () => tasks.filter((t) => !hasDates(t) && !isStructural(t) && t.status !== 'done' && t.status !== 'archived').slice(0, 12),
-    [tasks],
+    () => showUnscheduled ? tasks.filter((t) => !hasDates(t) && !isStructural(t) && t.status !== 'done' && t.status !== 'archived').slice(0, 12) : [],
+    [tasks, showUnscheduled],
   );
 
   const days = winDays;
@@ -542,7 +543,7 @@ export function GanttView() {
           })}
           {rows.length === 0 && (
             <div className="p-10 text-center text-sm text-muted/60">
-              该时间窗口内没有排期任务;在行内空白处拖拽可设定时间范围,或把下方「未排期」任务拖进来
+              {showUnscheduled ? '该时间窗口内没有排期任务；可在行内空白处拖拽排期，或把下方未排期任务拖进来。' : '该时间窗口内没有排期任务。设置任务日期后会显示在这里。'}
             </div>
           )}
         </div>
@@ -550,7 +551,7 @@ export function GanttView() {
 
       {/* 未排期坞:无开始/截止的任务,拖到图上某一天即排期 */}
       {unscheduled.length > 0 && (
-        <div className="shrink-0 border-t border-[var(--border)] px-4 py-2 md:px-6">
+        <div data-gantt-unscheduled className="shrink-0 border-t border-[var(--border)] px-4 py-2 md:px-6">
           <div className="mb-1 flex items-center gap-1.5 text-[10px] text-muted">
             <CalendarClock className="h-3 w-3" />
             <span>未排期({unscheduled.length})</span>

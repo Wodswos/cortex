@@ -18,6 +18,7 @@ import { useTimer } from '../focus/timer';
 import { TaskResources } from './TaskResources';
 import { isComposing } from './ime';
 import { useTaskTextDraft } from './useTaskTextDraft';
+import { useTaskSheetPull } from './useTaskSheetPull';
 
 export function TaskSheet() {
   const selectedId = useUI((s) => s.selectedTaskId);
@@ -44,6 +45,16 @@ export function TaskSheet() {
 
   const task = useMemo(() => data.tasks.find((t) => t.id === selectedId) ?? null, [data.tasks, selectedId]);
   const draft = useTaskTextDraft(task);
+  const pullRef = useTaskSheetPull(isMobile && !!task && !confirmingDeletion, selectedId, async () => {
+    const id = task?.id;
+    if (!id) return;
+    const focused = document.activeElement;
+    if (focused instanceof HTMLElement && focused.matches('input,textarea,[contenteditable]')) focused.blur();
+    try {
+      await draft.commit();
+      if (useUI.getState().selectedTaskId === id) selectTask(null);
+    } catch { /* A failed save keeps the sheet open, including its text drafts. */ }
+  });
 
   const childrenMap = useMemo(() => buildChildrenMap(data.tasks), [data.tasks]);
   const byId = useMemo(() => new Map(data.tasks.map((t) => [t.id, t])), [data.tasks]);
@@ -71,6 +82,9 @@ export function TaskSheet() {
       modal={isMobile}
     >
       <SheetContent
+        ref={pullRef}
+        data-task-sheet
+        style={isMobile ? { transform: 'translate3d(0,var(--task-sheet-pull,0px),0)', transition: 'transform var(--task-sheet-pull-duration,180ms) ease-out' } : undefined}
         side={isMobile ? 'bottom' : 'right'}
         title={project ? '项目详情' : node ? '分组详情' : '任务详情'}
         onInteractOutside={(event) => {
@@ -216,7 +230,7 @@ export function TaskSheet() {
                 </div>
               </div>
               <div className="-mt-1 text-[10px] text-muted/60">
-                两端都填 = 按此区间画条;只填一端 = 补齐当天;都不填 = 甘特图不显示(可从底部「未排期」拖进图里)
+                两端都填 = 按此区间画条;只填一端 = 补齐当天;都不填时甘特图不显示，设置日期后可排期
               </div>
             </>
           )}

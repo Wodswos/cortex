@@ -15,6 +15,7 @@ test('mobile drawer covers the app frame and keeps its contents inside safe area
   await page.getByRole('button', { name: '打开导航' }).click();
   const drawer = page.locator('.workspace-sidebar');
   const backdrop = page.getByRole('button', { name: '关闭导航' });
+  await expect.poll(async () => (await drawer.boundingBox())?.x).toBe(0);
   for (const height of [844, 620]) {
     await page.setViewportSize({ width: 390, height });
     await expect.poll(async () => (await drawer.boundingBox())?.height).toBe(height);
@@ -39,6 +40,7 @@ test('mobile drawer follows the visible frame when browser chrome reduces the vi
   });
   await page.goto('/tasks');
   await page.getByRole('button', { name: '打开导航' }).click();
+  await expect.poll(async () => (await page.locator('.workspace-sidebar').boundingBox())?.x).toBe(0);
   const drawer = (await page.locator('.workspace-sidebar').boundingBox())!;
   const backdrop = (await page.getByRole('button', { name: '关闭导航' }).boundingBox())!;
   expect(await page.evaluate(() => window.innerHeight)).toBe(844);
@@ -50,7 +52,7 @@ test('mobile task panes scroll without moving the app frame or navigation', asyn
   await page.goto('/settings');
   const tasks = Array.from({ length: 45 }, (_, index) => ({
     id: `mobile-${index}`, title: `Mobile task ${index}`, status: 'todo',
-    parentId: null, order: index, ownerId: 'fixture', tags: [], createdAt: 1, updatedAt: 1,
+    parentId: null, order: index, ownerId: 'fixture', tags: [], createdAt: 1, updatedAt: 1, dueAt: Date.now(),
   }));
   await page.locator('input[type=file]').setInputFiles({
     name: 'mobile-fixture.json', mimeType: 'application/json',

@@ -1,7 +1,7 @@
 import { addDays, calendarDaysBetween, dayKeyOf, isStructural, startOfDay, startOfWeek, taskRange, type Task } from '@cortex/core';
 
 export type WindowScope = 'all' | 'today' | 'week' | 'month' | 'custom' | 'undated';
-export type TaskWindow = { scope: WindowScope; start: number; days: number };
+export type TaskWindow = { scope: WindowScope; start: number; days: number; scheduledOnly?: boolean };
 export const MAX_WINDOW_DAYS = 366;
 
 function parseDay(value: string | null): number | null {
@@ -11,10 +11,11 @@ function parseDay(value: string | null): number | null {
 }
 
 /** Date-only arithmetic keeps the inclusive span stable across daylight-saving changes. */
-export function readTaskWindow(params: URLSearchParams, now: Date, weekStartsOn: 0 | 1, temporal = false): TaskWindow {
+export function readTaskWindow(params: URLSearchParams, now: Date, weekStartsOn: 0 | 1, temporal = false, allowUndated = true): TaskWindow {
   let scope = params.get('scope') as WindowScope;
   if (!['all', 'today', 'week', 'month', 'custom', 'undated'].includes(scope)) scope = temporal ? 'week' : 'all';
   if (temporal && (scope === 'all' || scope === 'undated')) scope = 'week';
+  if (!allowUndated && scope === 'undated') scope = 'week';
   const today = startOfDay(now).getTime();
   if (scope === 'week') return { scope, start: startOfWeek(now, weekStartsOn).getTime(), days: 7 };
   if (scope === 'month') return { scope, start: new Date(now.getFullYear(), now.getMonth(), 1).getTime(), days: new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() };
@@ -33,9 +34,10 @@ export function isCalendarMonth(window: TaskWindow): boolean {
   return isDatedWindow(window) && start.getDate() === 1 && window.days === new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate();
 }
 export function windowDueAt(window: TaskWindow, now = Date.now()): number | undefined {
-  if (!isDatedWindow(window)) return undefined;
+  const dated = isDatedWindow(window);
+  if (!dated && !window.scheduledOnly) return undefined;
   const today = startOfDay(now).getTime();
-  const day = today >= window.start && today < windowEnd(window) ? today : window.start;
+  const day = !dated || today >= window.start && today < windowEnd(window) ? today : window.start;
   return addDays(day, 1).getTime() - 60_000;
 }
 
@@ -49,12 +51,13 @@ export function taskMatchesWindow(task: Task, window: TaskWindow): boolean {
 }
 
 /** Keep ancestors as context without bringing unrelated siblings into a time window. */
-export function tasksInWindow(tasks: Task[], window: TaskWindow, ancestors = true): Task[] {
-  if (window.scope === 'all') return tasks;
+export function tasksInWindow(tasks: Task[], window: TaskWindow, ancestors = true, scheduledOnly = window.scheduledOnly ?? false): Task[] {
+  if (window.scope === 'all' && !scheduledOnly) return tasks;
   const byId = new Map(tasks.map((task) => [task.id, task]));
   const keep = new Set<string>();
   for (const task of tasks) {
     if (!taskMatchesWindow(task, window)) continue;
+    if (scheduledOnly && (isStructural(task) || task.startAt == null && task.dueAt == null)) continue;
     let current: Task | undefined = task;
     while (current && !keep.has(current.id)) {
       keep.add(current.id);

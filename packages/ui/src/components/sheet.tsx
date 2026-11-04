@@ -48,6 +48,7 @@ export const SheetContent = React.forwardRef<
         </DialogPrimitive.Close>
       </div>
       <div
+        data-sheet-scroll
         className={cn(
           'overflow-y-auto px-4 pb-6',
           side === 'right' || side === 'left'
