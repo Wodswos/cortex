@@ -189,7 +189,7 @@ export function Layout() {
           {navigationOpen && (
             <button
               aria-label="关闭导航"
-              className="fixed inset-0 z-40 bg-black/20 md:hidden"
+              className="fixed inset-x-0 top-0 z-40 h-[var(--app-height,100dvh)] bg-black/20 md:hidden"
               onClick={() => setNavigationOpen(false)}
             />
           )}
@@ -197,7 +197,7 @@ export function Layout() {
             style={{ '--sidebar-width': `${sidebar.width}px` } as React.CSSProperties}
             className={cn(
               'workspace-sidebar flex-col px-3 py-5',
-              navigationOpen ? 'fixed top-[env(safe-area-inset-top)] bottom-[env(safe-area-inset-bottom)] left-[env(safe-area-inset-left)] z-50 flex' : 'hidden md:flex',
+              navigationOpen ? 'workspace-sidebar-open flex' : 'hidden md:flex',
             )}
           >
             <SidebarResize width={sidebar.width} onChange={sidebar.setWidth} />

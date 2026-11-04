@@ -27,6 +27,7 @@ import {
   validateCortexData,
   validateSavedViews,
   validateHabitConfig,
+  habitReminderTimes,
   validateHabitOrder,
   CortexSnapshot,
   Review,
@@ -670,7 +671,8 @@ export class CortexStore {
       icon: patch.icon ?? 'Flame',
       color: patch.color ?? '#22d3ee',
       cadence: patch.cadence ?? { type: 'daily' },
-      reminderAt: patch.reminderAt,
+      reminderAt: habitReminderTimes(patch)[0] ?? '',
+      reminderTimes: habitReminderTimes(patch),
       reminderEnabled: patch.reminderEnabled,
       linkedTaskTemplateId: patch.linkedTaskTemplateId ?? null,
       targetPerDay: patch.targetPerDay ?? 1,
@@ -687,7 +689,8 @@ export class CortexStore {
     validateHabitConfig(patch);
     const cur = this.get<Habit>('habits', id);
     if (!cur) return;
-    this.patchEntity('habits', id, patch);
+    const times = patch.reminderTimes !== undefined || patch.reminderAt !== undefined ? habitReminderTimes(patch) : null;
+    this.patchEntity('habits', id, times ? { ...patch, reminderTimes: times, reminderAt: times[0] ?? '' } : patch);
   }
 
   deleteHabit(id: string): void {

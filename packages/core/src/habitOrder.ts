@@ -1,4 +1,5 @@
 import type { Habit, Settings } from './types';
+import { habitReminderTimes } from './habitConfig';
 
 type HabitOrdering = Pick<Settings, 'habitSort' | 'habitOrder'>;
 
@@ -11,7 +12,7 @@ export function validateHabitOrder(value: unknown): asserts value is string[] {
 export function sortedHabits(habits: Habit[], settings: HabitOrdering): Habit[] {
   const ranks = new Map(settings.habitOrder.map((id, index) => [id, index]));
   const manual = (a: Habit, b: Habit) => (ranks.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (ranks.get(b.id) ?? Number.MAX_SAFE_INTEGER) || a.createdAt - b.createdAt || a.id.localeCompare(b.id);
-  return habits.filter(habit => !habit.deletedAt && !habit.archivedAt).sort((a, b) => settings.habitSort === 'time' ? (a.reminderAt || '99:99').localeCompare(b.reminderAt || '99:99') || manual(a, b) : manual(a, b));
+  return habits.filter(habit => !habit.deletedAt && !habit.archivedAt).sort((a, b) => settings.habitSort === 'time' ? (habitReminderTimes(a)[0] ?? '99:99').localeCompare(habitReminderTimes(b)[0] ?? '99:99') || manual(a, b) : manual(a, b));
 }
 
 /** Base a drag on the displayed order, including time mode. Preserve unseen ranks

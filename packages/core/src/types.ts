@@ -111,6 +111,7 @@ export interface Habit {
   color: string; // hex,热力图/卡片用
   cadence: Cadence;
   reminderAt?: string; // 'HH:mm' 本地时区
+  reminderTimes?: string[]; // 多个本地时间；缺省时兼容 reminderAt，空数组表示清除
   reminderEnabled?: boolean; // 旧数据有时间但没有开关时，沿用开启提醒
   linkedTaskTemplateId?: ID | null;
   targetPerDay?: number; // 每日多次打卡目标,如喝水 8 杯

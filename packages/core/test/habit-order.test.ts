@@ -21,3 +21,7 @@ it('rejects duplicate or malformed imported ordering before any writes', () => {
   for (const settings of [{ habitSort: 'other' }, { habitOrder: ['same', 'same'] }, { habitOrder: [1] }, { habitOrder: ['bad/id'] }]) expect(() => validateCortexData({ settings })).toThrow();
   expect(() => validateCortexData({ settings: { habitSort: 'manual', habitOrder: [] } })).not.toThrow();
 });
+it('sorts multi-time habits by their earliest time and respects explicitly cleared legacy times', () => {
+  const values = [habit('noon', 1, '12:00'), { ...habit('twice', 2, '20:00'), reminderTimes: ['20:00', '08:00'] }, { ...habit('cleared', 3, '07:00'), reminderTimes: [] }];
+  expect(sortedHabits(values, DEFAULT_SETTINGS).map(habit => habit.id)).toEqual(['twice', 'noon', 'cleared']);
+});

@@ -3,6 +3,31 @@ import * as Y from 'yjs';
 import { CortexStore } from '../src/store';
 import { logCountOn } from '@cortex/core';
 
+it('normalizes multi-time schedules, syncs and restores them, while preserving old single-time edits and history', () => {
+  const store = new CortexStore('a'), peer = new CortexStore('a'), restored = new CortexStore('a');
+  try {
+    const habit = store.createHabit({ name: '早晚阅读', reminderTimes: ['20:00', '08:00'], targetPerDay: 2 });
+    expect(habit).toMatchObject({ reminderTimes: ['08:00', '20:00'], reminderAt: '08:00' });
+    store.logHabit(habit.id, '2026-11-04', 1, 2);
+    store.stopUndoCapture(); store.updateHabit(habit.id, { reminderTimes: ['21:00', '09:00'] }); store.stopUndoCapture();
+    Y.applyUpdate(peer.docs.habits, Y.encodeStateAsUpdate(store.docs.habits), 'remote');
+    expect(peer.getData().habits[0]).toMatchObject({ reminderTimes: ['09:00', '21:00'], reminderAt: '09:00' });
+    restored.importJSON(store.exportSnapshot());
+    expect(restored.getData().habits).toEqual(store.getData().habits);
+    expect(logCountOn(restored.getData().habitLogs, habit.id, '2026-11-04')).toBe(1);
+    store.undo();
+    expect(store.getData().habits[0]?.reminderTimes).toEqual(['08:00', '20:00']);
+    store.updateHabit(habit.id, { reminderAt: '22:00' });
+    expect(store.getData().habits[0]?.reminderTimes).toEqual(['22:00']);
+    store.updateHabit(habit.id, { reminderTimes: [] });
+    expect(store.getData().habits[0]).toMatchObject({ reminderTimes: [], reminderAt: '' });
+    expect(() => store.updateHabit(habit.id, { name: 'bad', reminderTimes: ['08:00', '08:00'] })).toThrow();
+    expect(() => store.importJSON({ tasks: [{ id: 'unexpected' }], habits: [{ ...habit, reminderTimes: ['24:00'] }] })).toThrow();
+    expect(store.getData().tasks).toHaveLength(0);
+    expect(store.getData().habits[0]?.name).toBe('早晚阅读');
+  } finally { store.destroy(); peer.destroy(); restored.destroy(); }
+});
+
 it('edits schedules in place, preserves check-ins and interval anchors, and syncs/backups without account leakage', () => {
   const store = new CortexStore('a'), peer = new CortexStore('a'), restored = new CortexStore('a'), outsider = new CortexStore('b');
   try {
