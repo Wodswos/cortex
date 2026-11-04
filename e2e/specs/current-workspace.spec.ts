@@ -37,7 +37,7 @@ test('sidebar contains workspaces, project directory collapse persists and creat
   await page.reload();
   await expect(page.getByRole('button', { name: '收起项目', exact: true })).toHaveAttribute('aria-expanded', 'true');
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByRole('navigation', { name: '移动导航', exact: true }).getByRole('link')).toHaveText(['当前任务', '收集箱', '本月日历']);
+  await expect(page.getByRole('navigation', { name: '移动导航', exact: true }).getByRole('link')).toHaveText(['当前任务', '本月日历']);
 });
 
 test('current workspace preserves the same custom window across its five views and keeps project backlog accessible', async ({ page }) => {
@@ -77,6 +77,7 @@ test('current workspace preserves the same custom window across its five views a
   await page.setViewportSize({ width: 390, height: 844 });
   await range(page).selectOption('custom');
   await expect(dateField(page, '区间结束日期')).toBeVisible();
+  await page.getByRole('dialog', { name: '选择日期区间', exact: true }).getByRole('button', { name: '取消', exact: true }).click();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: '../.preview.local/navigation-mobile.png' });
 });

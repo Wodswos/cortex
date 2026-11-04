@@ -2,14 +2,14 @@ import { expect, test, type Page } from '@playwright/test';
 
 test.use({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, contextOptions: { reducedMotion: 'no-preference' } });
 
-async function swipe(page: Page, selector: string, dx: number, dy = 0, points = 1) {
+async function swipe(page: Page, selector: string, dx: number, dy = 0, points = 1, duration = 400) {
   return page.locator(selector).evaluate((element, gesture) => {
     const box = element.getBoundingClientRect();
     const x = box.left + Math.min(90, box.width / 4), y = box.bottom - Math.min(35, box.height / 2);
     const touch = (offset: number, vertical: number, identifier = 1) => ({ identifier, target: element, clientX: x + offset, clientY: y + vertical });
     const dispatch = (type: string, touches: ReturnType<typeof touch>[], changedTouches = touches) => {
       const event = new Event(type, { bubbles: true, cancelable: true });
-      Object.defineProperties(event, { touches: { value: touches }, changedTouches: { value: changedTouches } });
+      Object.defineProperties(event, { touches: { value: touches }, changedTouches: { value: changedTouches }, timeStamp: { value: type === 'touchstart' ? 0 : type === 'touchmove' ? gesture.duration * 0.8 : gesture.duration } });
       element.dispatchEvent(event);
       return event.defaultPrevented;
     };
@@ -17,7 +17,7 @@ async function swipe(page: Page, selector: string, dx: number, dy = 0, points = 
     const prevented = dispatch('touchmove', Array.from({ length: gesture.points }, (_, index) => touch(gesture.dx, gesture.dy + index * 5, index + 1)));
     dispatch('touchend', [], [touch(gesture.dx, gesture.dy)]);
     return prevented;
-  }, { dx, dy, points });
+  }, { dx, dy, points, duration });
 }
 
 test('sidebar slides horizontally in and out while its surface keeps the full safe-area height', async ({ page }) => {
@@ -107,12 +107,46 @@ test('task rows, controls and horizontal work surfaces retain their gestures wit
   await expect(drawer).toBeHidden();
   await page.goto('/tasks?view=gantt&scope=week');
   await expect(page.locator('[data-gantt-scroll]')).toBeVisible();
-  expect(await swipe(page, '[data-gantt-scroll]', 110)).toBe(false);
+  // Gantt owns horizontal touch paging and may suppress native scrolling.
+  await swipe(page, '[data-gantt-scroll]', 110);
   await expect(drawer).toBeHidden();
   await page.goto('/tasks?view=mindmap');
   await expect(page.locator('.react-flow')).toBeVisible();
   expect(await swipe(page, '.react-flow', 110)).toBe(false);
   await expect(drawer).toBeHidden();
+});
+
+test('the drawer follows the finger, rebounds a short pull and accepts natural diagonal swipes and quick flicks', async ({ page }) => {
+  await page.goto('/tasks?view=list');
+  await expect(page.locator('[data-task-list]')).toBeVisible();
+  const drawer = page.locator('.workspace-sidebar');
+  const preview = await page.locator('[data-task-list]').evaluate(async element => {
+    const contact = (x: number) => ({ identifier: 1, target: element, clientX: x, clientY: 400 });
+    const dispatch = (type: string, x: number, time: number) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperties(event, { touches: { value: type === 'touchend' ? [] : [contact(x)] }, changedTouches: { value: [contact(x)] }, timeStamp: { value: time } });
+      element.dispatchEvent(event);
+    };
+    dispatch('touchstart', 80, 0);
+    dispatch('touchmove', 115, 250);
+    await new Promise(requestAnimationFrame);
+    const sidebar = document.querySelector<HTMLElement>('.workspace-sidebar')!;
+    const box = sidebar.getBoundingClientRect();
+    const result = { x: box.x, width: box.width, dragging: sidebar.hasAttribute('data-sidebar-dragging'), expanded: document.querySelector('[aria-label="打开导航"]')?.getAttribute('aria-expanded') };
+    dispatch('touchend', 115, 400);
+    return result;
+  });
+  expect(preview.dragging).toBe(true);
+  expect(preview.x).toBeGreaterThan(-preview.width);
+  expect(preview.x).toBeLessThan(-1);
+  expect(preview.expanded).toBe('false');
+  await expect(drawer).toBeHidden();
+  expect(await swipe(page, '[data-task-list]', 85, 40, 1, 1000)).toBe(true);
+  await expect(drawer).toBeVisible();
+  expect(await swipe(page, '.workspace-navigation-backdrop', -85, 20)).toBe(true);
+  await expect(drawer).toBeHidden();
+  expect(await swipe(page, '[data-task-list]', 28, 4, 1, 60)).toBe(true);
+  await expect(drawer).toBeVisible();
 });
 
 test('reduced motion opens and closes the same drawer immediately', async ({ page }) => {
@@ -135,7 +169,7 @@ test('real touch input on blank content opens the drawer without scrolling the a
   const x = box.x + 70, y = box.y + box.height - 35;
   const cdp = await page.context().newCDPSession(page);
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
-  for (const offset of [20, 45, 75, 110]) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x + offset, y: y + 5 }] });
+  for (const [offset, vertical] of [[8, 3], [18, 10], [35, 18], [70, 30], [110, 45]]) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x + offset!, y: y + vertical! }] });
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await expect(page.locator('.workspace-sidebar')).toBeVisible();
   expect(await page.evaluate(() => window.scrollY)).toBe(0);

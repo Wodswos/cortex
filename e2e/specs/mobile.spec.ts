@@ -2,6 +2,29 @@ import { test, expect } from '@playwright/test';
 
 test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 
+test('mobile navigation stays compact, keeps the home-indicator inset and moves inbox out of primary navigation', async ({ page }) => {
+  await page.goto('/tasks');
+  const nav = page.getByRole('navigation', { name: '移动导航', exact: true });
+  await expect(nav.getByRole('link', { name: '收集箱', exact: true })).toHaveCount(0);
+  const bar = (await nav.boundingBox())!;
+  expect(bar.height).toBeGreaterThanOrEqual(48);
+  expect(bar.height).toBeLessThanOrEqual(49);
+  expect((await page.locator('header').boundingBox())!.height).toBe(40);
+  await page.evaluate(() => {
+    document.documentElement.style.setProperty('--app-safe-area-bottom', '34px');
+  });
+  await expect.poll(async () => {
+    const box = (await nav.boundingBox())!;
+    return box.y + box.height;
+  }).toBe(810);
+  await page.getByRole('button', { name: '打开导航', exact: true }).click();
+  const inbox = page.locator('.workspace-sidebar').getByRole('link', { name: '收集箱', exact: true });
+  await expect(inbox).toBeHidden();
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect(inbox).toBeVisible();
+  expect((await page.locator('header').boundingBox())!.height).toBe(48);
+});
+
 test('mobile drawer covers the app frame and keeps its contents inside safe areas', async ({ page }) => {
   // Desktop browser emulation has zero safe-area insets. Exercise the same
   // shared inset values that an iPhone supplies to both the frame and drawer.

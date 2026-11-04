@@ -1,7 +1,10 @@
-import React, { lazy, Suspense, useEffect, useMemo } from 'react';
+import React, { lazy, Suspense, useEffect, useMemo, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router';
-import { Segmented, SegmentedList, SegmentedTrigger } from '@cortex/ui';
+import { Dropdown, DropdownContent, DropdownItem, DropdownLabel, DropdownSeparator, DropdownTrigger, Segmented, SegmentedList, SegmentedTrigger } from '@cortex/ui';
 import {
+  BookmarkPlus,
+  Check,
+  Inbox,
   Library,
   MoreHorizontal,
 } from 'lucide-react';
@@ -55,6 +58,8 @@ export default function TasksPage() {
   const title = saved?.name || project?.title || '当前任务';
   const display = data.settings.completedDisplay ?? 'inline-gray';
   const ui = useUI();
+  const moreRef = useRef<HTMLButtonElement>(null);
+  const savingView = useRef(false);
 
   if (projectId && !project) return (
     <div className="space-y-3 p-6 text-sm text-muted">
@@ -65,13 +70,14 @@ export default function TasksPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex min-h-16 shrink-0 flex-wrap items-center gap-3 border-b border-[var(--border)] px-5 py-3 lg:px-7">
-        <div className="flex w-full shrink-0 items-center gap-2 sm:w-40">
-          <h1 title={title} aria-label={title} className="min-w-0 flex-1 truncate text-lg font-semibold tracking-tight">
+      <div data-task-toolbar className="flex min-h-12 shrink-0 items-center gap-1 border-b border-[var(--border)] px-3 py-1.5 md:min-h-16 md:flex-wrap md:gap-3 md:px-5 md:py-3 lg:px-7">
+        <div className="flex min-w-0 shrink items-center gap-2 md:w-40 md:shrink-0">
+          <h1 title={title} aria-label={title} className="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight md:text-lg">
             {project && !saved ? <button className="block w-full truncate text-left" aria-label={`编辑项目 ${title}`} onClick={() => ui.selectTask(project.id)}>{title}</button> : title}
           </h1>
         </div>
         <Segmented
+          className="flex shrink-0"
           value={view}
           onValueChange={(v) => {
             const next = new URLSearchParams(window.location.search);
@@ -86,23 +92,46 @@ export default function TasksPage() {
             setParams(next, { replace: true });
           }}
         >
-          <SegmentedList aria-label="任务视图">
+          <SegmentedList aria-label="任务视图" className="gap-0 md:gap-0.5">
             {TASK_VIEWS.map(({ key, label, icon: Icon }) => (
               <SegmentedTrigger
                 key={key}
                 value={key}
                 aria-label={label}
-                className="inline-flex items-center justify-center gap-1.5 px-2.5 text-xs md:px-3 md:text-xs"
+                title={label}
+                className="inline-flex h-8 w-8 items-center justify-center gap-1.5 p-0 text-xs md:w-auto md:px-3 md:text-xs"
               >
                 <Icon className="h-3.5 w-3.5 shrink-0" />
-                <span className="hidden sm:inline">{label}</span>
+                <span className="hidden md:inline">{label}</span>
               </SegmentedTrigger>
             ))}
           </SegmentedList>
         </Segmented>
 
+        <div className="ml-auto shrink-0 md:hidden">
+          <SaveViewButton key={store.userId} view={view} restoreFocus={() => moreRef.current?.focus()} trigger={(openSave) => (
+          <Dropdown>
+            <DropdownTrigger asChild><button ref={moreRef} aria-label="任务更多操作" title="任务更多操作" className="grid h-8 w-8 place-items-center rounded-md text-muted hover:bg-[var(--surface)] hover:text-foreground"><MoreHorizontal size={17} /></button></DropdownTrigger>
+            <DropdownContent align="end" collisionPadding={12} aria-label="任务更多操作" onCloseAutoFocus={(event) => {
+              if (savingView.current) { event.preventDefault(); savingView.current = false; }
+            }}>
+              {projectProgress && projectProgress.total > 0 && <DropdownLabel>项目进度 {projectProgress.done}/{projectProgress.total}</DropdownLabel>}
+              <DropdownItem role="menuitemcheckbox" aria-checked={display === 'hidden'} onSelect={() => store.updateSettings({ completedDisplay: display === 'hidden' ? 'inline-gray' : 'hidden' })}><Check size={15} className={display === 'hidden' ? '' : 'opacity-0'} />隐藏已完成</DropdownItem>
+              <DropdownItem onSelect={() => { savingView.current = true; openSave(); }}><BookmarkPlus size={15} />保存为快捷视图</DropdownItem>
+              {project && <DropdownItem onSelect={() => {
+                const rect = moreRef.current?.getBoundingClientRect();
+                if (rect) ui.openTaskMenu(project.id, rect.left, rect.bottom + 4);
+              }}><MoreHorizontal size={15} />项目操作</DropdownItem>}
+              <DropdownSeparator />
+              <DropdownItem asChild><Link to="/gallery"><Library size={15} />模板</Link></DropdownItem>
+              <DropdownItem asChild><Link to="/inbox"><Inbox size={15} />收集箱</Link></DropdownItem>
+            </DropdownContent>
+          </Dropdown>
+          )} />
+        </div>
+
         {/* 右上角:已完成任务展现 + Gallery 入口 */}
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto hidden items-center gap-2 md:flex">
           <SaveViewButton key={store.userId} view={view} />
           {projectProgress && projectProgress.total > 0 && <span aria-label="项目进度" className="text-xs tabular-nums text-muted">{projectProgress.done}/{projectProgress.total}</span>}
           {project && <button aria-label="项目菜单" title="项目菜单" className="text-muted hover:text-foreground" onClick={(event) => {
@@ -127,7 +156,7 @@ export default function TasksPage() {
           </Link>
         </div>
       </div>
-      <div className="shrink-0 border-b border-[var(--border)] px-5 py-2 lg:px-7"><TaskWindowControls temporal={['gantt', 'timeline'].includes(view)} /></div>
+      <div className="shrink-0 border-b border-[var(--border)] px-3 py-1 md:px-5 md:py-2 lg:px-7"><TaskWindowControls temporal={['gantt', 'timeline'].includes(view)} /></div>
       <div className="min-h-0 flex-1">
         <Suspense
           fallback={

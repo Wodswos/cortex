@@ -351,6 +351,13 @@ body::before {
     pointer-events: auto;
     transition-delay: 0s;
   }
+  .workspace-sidebar[data-sidebar-dragging] {
+    transform: translateX(var(--sidebar-swipe-x));
+    visibility: visible;
+    pointer-events: none;
+    transition: none;
+  }
+  .workspace-sidebar .workspace-nav-desktop { display: none; }
   .workspace-navigation-backdrop {
     opacity: 0;
     visibility: hidden;
@@ -362,6 +369,12 @@ body::before {
     visibility: visible;
     pointer-events: auto;
     transition-delay: 0s;
+  }
+  .workspace-navigation-backdrop[data-sidebar-dragging] {
+    opacity: var(--sidebar-swipe-opacity);
+    visibility: visible;
+    pointer-events: none;
+    transition: none;
   }
   @media (prefers-reduced-motion: reduce) {
     .workspace-sidebar,

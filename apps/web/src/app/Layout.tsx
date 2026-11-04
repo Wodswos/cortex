@@ -34,6 +34,7 @@ import { ReviewReminder } from '../features/reviews/ReviewReminder';
 import { HabitReminder } from '../features/habits/HabitReminder';
 import { SavedViewsNav } from '../features/tasks/savedViews/SavedViewsNav';
 import { TASK_VIEWS } from '../features/tasks/viewOptions';
+import { useMobileNavigationSwipe } from './useMobileNavigationSwipe';
 const TmuxViewer = lazy(() =>
   import('../shared/TmuxViewer').then((module) => ({ default: module.TmuxViewer })),
 );
@@ -90,20 +91,6 @@ const tools = [
   { to: '/habits', label: '习惯', icon: Activity },
 ];
 
-function blankSidebarSwipeTarget(target: EventTarget | null, frame: HTMLElement): boolean {
-  if (!(target instanceof HTMLElement) || !target.closest('main, header')) return false;
-  if (target.closest('button, a, input, textarea, select, label, [contenteditable]:not([contenteditable="false"]), [tabindex]:not([tabindex="-1"]), [role="button"], [role="dialog"], [role="slider"], [role="separator"], [draggable="true"], [data-row], [data-habit-row], [data-inspector], [data-destructive-dialog], [data-sidebar-swipe-ignore], [data-gantt-scroll], [data-calendar-week-date], [data-calendar-event], .react-flow, .xterm, svg, canvas, img, video')) return false;
-  // Text and controls retain their own selection, drag and tap behavior. Only
-  // the uncovered container surface may start the navigation gesture.
-  if ([...target.childNodes].some(node => node.nodeType === Node.TEXT_NODE && node.textContent?.trim())) return false;
-  for (let element: HTMLElement | null = target; element && element !== frame; element = element.parentElement) {
-    const style = getComputedStyle(element);
-    if (['auto', 'scroll'].includes(style.overflowX) && element.scrollWidth > element.clientWidth + 1) return false;
-    if (style.touchAction === 'none' || /\bpan-(x|left|right)\b/.test(style.touchAction)) return false;
-  }
-  return true;
-}
-
 export function Layout() {
   const { phase, user, error } = useAuth();
   const data = useCortexData();
@@ -136,49 +123,7 @@ export function Layout() {
   useEffect(() => {
     setNavigationOpen(false);
   }, [location.pathname, location.search]);
-  useEffect(() => {
-    const frame = frameRef.current;
-    if (!frame || navigationOpen || immersive || phase === 'loading') return;
-    let swipe: { id: number; x: number; y: number; time: number; horizontal: boolean } | null = null;
-    const cancel = () => { swipe = null; };
-    const start = (event: TouchEvent) => {
-      cancel();
-      if (event.defaultPrevented || !window.matchMedia('(width < 48rem)').matches || event.touches.length !== 1 || !blankSidebarSwipeTarget(event.target, frame)) return;
-      const touch = event.touches[0]!;
-      swipe = { id: touch.identifier, x: touch.clientX, y: touch.clientY, time: performance.now(), horizontal: false };
-    };
-    const move = (event: TouchEvent) => {
-      if (!swipe || event.touches.length !== 1) { cancel(); return; }
-      const touch = event.touches[0]!;
-      const dx = touch.clientX - swipe.x, dy = Math.abs(touch.clientY - swipe.y);
-      if (touch.identifier !== swipe.id || dx < -12 || dy > (swipe.horizontal ? 36 : 14)) { cancel(); return; }
-      if (dx > 18 && dx > dy * 2) swipe.horizontal = true;
-      // Leave vertical scrolling alone. Suppress browser handling only after
-      // a blank-area gesture has a clear horizontal intent.
-      if (swipe.horizontal && event.cancelable) event.preventDefault();
-    };
-    const end = (event: TouchEvent) => {
-      const current = swipe;
-      cancel();
-      if (!current || event.touches.length || performance.now() - current.time > 700) return;
-      const touch = [...event.changedTouches].find(item => item.identifier === current.id);
-      if (!touch) return;
-      const dx = touch.clientX - current.x, dy = Math.abs(touch.clientY - current.y);
-      if (dx < 64 || dy > 36 || dx < dy * 2) return;
-      if (event.cancelable) event.preventDefault();
-      setNavigationOpen(true);
-    };
-    frame.addEventListener('touchstart', start, { passive: true });
-    frame.addEventListener('touchmove', move, { passive: false });
-    frame.addEventListener('touchend', end, { passive: false });
-    frame.addEventListener('touchcancel', cancel);
-    return () => {
-      frame.removeEventListener('touchstart', start);
-      frame.removeEventListener('touchmove', move);
-      frame.removeEventListener('touchend', end);
-      frame.removeEventListener('touchcancel', cancel);
-    };
-  }, [navigationOpen, immersive, phase]);
+  useMobileNavigationSwipe(frameRef, !immersive && phase !== 'loading', navigationOpen, setNavigationOpen);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (isComposing(event)) return;
@@ -233,7 +178,7 @@ export function Layout() {
 
   const nav = (items: typeof primary) =>
     items.map(({ to, label, icon: Icon }) => (
-      <Link key={to} to={to} className="workspace-nav" aria-current={active(to) ? 'page' : undefined}>
+      <Link key={to} to={to} className={cn('workspace-nav', to === '/inbox' && 'workspace-nav-desktop')} aria-current={active(to) ? 'page' : undefined}>
         <Icon />
         <span>{label}</span>
         {to === '/inbox' && inboxCount > 0 && (
@@ -308,7 +253,7 @@ export function Layout() {
       )}
       <div className="flex min-w-0 flex-1 flex-col">
         {!immersive && (
-          <header className="flex h-12 shrink-0 items-center gap-3 border-b border-[var(--border)] px-4 lg:px-6">
+          <header className="flex h-10 shrink-0 items-center gap-3 border-b border-[var(--border)] px-3 md:h-12 md:px-4 lg:px-6">
             <button
               aria-label="打开导航"
               aria-controls="workspace-sidebar"
@@ -363,12 +308,12 @@ export function Layout() {
             aria-label="移动导航"
             className="flex shrink-0 justify-around border-t border-[var(--border)] bg-[var(--background)] md:hidden"
           >
-            {[...primary, ...data.settings.savedViews.slice(0, 1).map((view) => ({ to: savedViewHref(view), label: view.name, icon: TASK_VIEWS.find((item) => item.key === view.view)!.icon }))].map(({ to, label, icon: Icon }) => (
+            {[...primary.filter(item => item.to !== '/inbox'), ...data.settings.savedViews.slice(0, 1).map((view) => ({ to: savedViewHref(view), label: view.name, icon: TASK_VIEWS.find((item) => item.key === view.view)!.icon }))].map(({ to, label, icon: Icon }) => (
               <Link
                 key={to}
                 to={to}
                 className={cn(
-                  'flex min-h-14 min-w-0 max-w-28 flex-col items-center justify-center gap-1 px-3 text-[10px]',
+                  'flex min-h-12 min-w-0 max-w-28 flex-col items-center justify-center gap-0.5 px-3 text-[10px]',
                   active(to) ? 'text-[var(--accent-solid)]' : 'text-muted',
                 )}
               >

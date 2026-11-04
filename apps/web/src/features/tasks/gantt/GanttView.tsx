@@ -13,6 +13,8 @@ import { TaskCheckbox, PRIORITY_VAR } from '@/shared/components';
 import { ganttDragPatch, ganttDragRange, type GanttDragMode } from './drag';
 import { useTaskWindow } from '../TaskWindowControls';
 import { createWheelPager } from './wheelPaging';
+import { GanttNameResize, useGanttNameWidth } from './GanttNameWidth';
+import { useGanttTouchPaging } from './useGanttTouchPaging';
 
 /**
  * 甘特图:任务树 × 天轴。
@@ -26,13 +28,11 @@ import { createWheelPager } from './wheelPaging';
  *   逾期条右上角带红色「!」角标;结构节点(kind=node)不画条、不进未排期坞,只作分组行。
  */
 
-const MIN_PX_PER_DAY = 44; // 窗口天数很多时的下限(可横向滚动)
 /** 拖拽吸附粒度(分钟):条平移/伸缩都按它取整,而不是整天 */
 const SNAP_MIN = 5;
 /** 缩放档位:天宽 = 自适应宽度 × 档位;放大后 1px 代表的分钟更小,才拖得动"分" */
 const ZOOMS = [1, 2, 4, 8];
 const ROW_H = 34;
-const NAME_W = 208;
 const CHEVRON_W = 16; // 折叠钮占位:无子级的行也留出,保证同深度名字左沿对齐
 
 interface Row {
@@ -107,6 +107,9 @@ export function GanttView() {
   const [trayDrag, setTrayDrag] = useState<{ taskId: string; title: string; x: number; y: number } | null>(null);
   const suppressClick = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const nameColumn = useGanttNameWidth();
+  const nameWidth = nameColumn.width;
+  useGanttTouchPaging(scrollRef, nameColumn.mobile, projectId, range, setRange, !!dragging || !!draft || !!trayDrag);
   const wheelContext = useRef({ range, setRange, blocked: false });
   wheelContext.current = { range, setRange, blocked: !!dragging || !!draft || !!trayDrag };
   useEffect(() => {
@@ -208,8 +211,9 @@ export function GanttView() {
   );
 
   const days = winDays;
-  /** 列宽 = max(44, (容器宽 - 名字列) / 天数) × 缩放档位 */
-  const fitPerDay = Math.max(MIN_PX_PER_DAY, boxW > NAME_W + 120 ? (boxW - NAME_W - 8) / days : MIN_PX_PER_DAY);
+  /** Mobile trades wide day cells for a readable weekly overview; zoom keeps precise editing available. */
+  const minPerDay = nameColumn.mobile ? 28 : 44;
+  const fitPerDay = Math.max(minPerDay, nameColumn.mobile ? (boxW - nameWidth - 1) / days : boxW > nameWidth + 120 ? (boxW - nameWidth - 8) / days : minPerDay);
   const pxPerDay = fitPerDay * zoom;
   const xOf = (t: number) => calendarPosition(t, winStartTime) * pxPerDay;
   const todayX = xOf(Date.now());
@@ -263,6 +267,7 @@ export function GanttView() {
   // ---------- 行内空白:按下为一端,拖到另一端松开 = 设定范围(按天) ----------
   const onTrackDown = (e: React.PointerEvent, r: Row) => {
     if (e.button !== 0) return;
+    if (e.pointerType === 'touch') return; // A finger pans/pages the axis; it must not silently reschedule the row.
     if (isStructural(r.task)) return; // 结构节点不排期:空白拖拽对它无效
     if (e.target !== e.currentTarget) return; // 只在空白轨道上起手(条/把手/预览不算)
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -322,7 +327,7 @@ export function GanttView() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* 时间轴缩放与图例；时间区间由工作区顶栏统一管理。 */}
-      <div className="flex shrink-0 flex-wrap items-center gap-2 px-4 py-3 md:px-6">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 px-2 py-1 md:px-6 md:py-3">
         {/* 缩放:放大时间轴,拖动才能精确到分钟 */}
         <div className="flex items-center gap-1">
           <button
@@ -343,6 +348,7 @@ export function GanttView() {
             <Plus className="h-3.5 w-3.5" />
           </button>
         </div>
+        <span className="ml-auto text-[10px] text-muted/70 md:hidden">左右滑动切换时间</span>
         <span className="ml-auto hidden items-center gap-2 text-[10px] text-muted/60 lg:inline-flex">
           <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-[var(--success)]" />进行中</span>
           <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-[var(--accent-from)]" />未开始</span>
@@ -362,12 +368,15 @@ export function GanttView() {
           </span>
         </span>
       </div>
-      <p className="shrink-0 px-4 pb-2 text-[11px] text-muted md:px-6">双指左右滑动切换整个区间 · 放大后可用 Shift + 滚轮平移时间轴</p>
-      <div ref={scrollRef} data-gantt-scroll className="min-h-0 flex-1 overflow-auto overscroll-x-contain pb-6">
+      <p className="hidden shrink-0 px-4 pb-2 text-[11px] text-muted md:block md:px-6">双指左右滑动切换整个区间 · 放大后可用 Shift + 滚轮平移时间轴</p>
+      <div ref={scrollRef} data-gantt-scroll style={nameColumn.mobile ? { touchAction: 'pan-y pinch-zoom' } : undefined} className="min-h-0 flex-1 overflow-auto overscroll-x-contain pb-2 md:pb-6">
         <div className="inline-block min-w-full">
           {/* 日期表头(sticky top) */}
           <div className="sticky top-0 z-20 flex bg-[var(--background)]/95 backdrop-blur">
-            <div className="sticky left-0 z-10 shrink-0 border-b border-r border-[var(--border)] bg-[var(--background)]/95" style={{ width: NAME_W }} />
+            <div data-gantt-name-heading className="sticky left-0 z-10 flex shrink-0 items-center border-b border-r border-[var(--border)] bg-[var(--background)]/95 px-2" style={{ width: nameWidth }}>
+              <span className="text-[10px] text-muted md:hidden">任务</span>
+              {nameColumn.mobile && <GanttNameResize width={nameWidth} onChange={nameColumn.setWidth} />}
+            </div>
             <div className="flex border-b border-[var(--border)]" style={{ width: days * pxPerDay, minWidth: days * pxPerDay }}>
               {Array.from({ length: days }, (_, i) => {
                 const d = new Date(dayAt(i));
@@ -412,19 +421,19 @@ export function GanttView() {
                     ui.openTaskMenu(r.task.id, e.clientX, e.clientY);
                   }}
                 >
-                  <div className="sticky left-0 z-10 flex shrink-0 items-center gap-1 bg-[var(--background)] px-2 py-1" style={{ width: NAME_W }}>
-                    <span style={{ width: (r.depth === 0 ? 0 : 14 * r.depth) + 8 }} className="shrink-0" />
+                  <div data-gantt-name className="sticky left-0 z-10 flex shrink-0 items-center gap-0.5 bg-[var(--background)] px-1 py-0 md:gap-1 md:px-2 md:py-1" style={{ width: nameWidth }}>
+                    <span style={{ width: nameColumn.mobile ? Math.min(r.depth * 8, 16) : (r.depth === 0 ? 0 : 14 * r.depth) + 8 }} className="shrink-0" />
                     {/* 折叠钮:没有子级也占同样宽度的位置,否则同深度的名字会左移、看着像"子任务跑到父任务前面" */}
                     {hasKids ? (
                       <button
                         onClick={() => ui.toggleCollapsed(r.task.id)}
                         className="flex shrink-0 items-center justify-center text-muted hover:text-foreground"
-                        style={{ width: CHEVRON_W }}
+                        style={{ width: nameColumn.mobile ? 12 : CHEVRON_W }}
                       >
                         <ChevronRight className={cn('h-3 w-3 transition-transform', !collapsed[r.task.id] && 'rotate-90')} />
                       </button>
                     ) : (
-                      <span className="shrink-0" style={{ width: CHEVRON_W }} />
+                      <span className="shrink-0" style={{ width: nameColumn.mobile ? 12 : CHEVRON_W }} />
                     )}
                     {isStructural(r.task) ? (
                       <span className="grid w-3.5 shrink-0 place-items-center text-muted/60" title="结构节点(无完成态)">
@@ -432,8 +441,8 @@ export function GanttView() {
                       </span>
                     ) : (
                       <>
-                        <TaskCheckbox done={r.task.status === 'done'} onChange={() => store.toggleTaskDone(r.task.id)} className="!h-3.5 !w-3.5 shrink-0" />
-                        <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', STATUS_DOT[vs.kind])} title={vs.label} />
+                        <TaskCheckbox done={r.task.status === 'done'} onChange={() => store.toggleTaskDone(r.task.id)} className="!h-3.5 !w-3.5 shrink-0 max-md:!min-h-8 max-md:!min-w-7" />
+                        <span className={cn('h-1 w-1 shrink-0 rounded-full md:h-1.5 md:w-1.5', STATUS_DOT[vs.kind])} title={vs.label} />
                       </>
                     )}
                     <button
@@ -453,6 +462,7 @@ export function GanttView() {
                     onPointerDown={(e) => onTrackDown(e, r)}
                     onPointerMove={(e) => onTrackMove(e, r)}
                     onPointerUp={() => onTrackUp(r)}
+                    onPointerCancel={() => setDraft(null)}
                     className="relative cursor-crosshair"
                     style={{ width: days * pxPerDay, minWidth: days * pxPerDay, height: ROW_H }}
                   >
