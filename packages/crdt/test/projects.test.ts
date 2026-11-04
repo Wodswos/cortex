@@ -4,6 +4,28 @@ import { isProject } from '@cortex/core';
 import { CortexStore, DOC_IDS } from '../src/store';
 
 describe('project identity through edits, sync, undo and export', () => {
+  it('deletes and restores a project subtree atomically, including repeated deletion after undo', () => {
+    const store = new CortexStore('u');
+    const project = store.createProject('Project');
+    const child = store.createTask({ title: 'child', parentId: project.id, status: 'todo' });
+    const grandchild = store.createTask({ title: 'grandchild', parentId: child.id, status: 'todo' });
+    const unrelated = store.createTask({ title: 'unrelated', status: 'todo' });
+    store.stopUndoCapture();
+    let updates = 0;
+    store.onDocUpdate = (id) => { if (id === 'tasks') updates++; };
+    store.softDeleteTask(project.id);
+    expect(updates).toBe(1);
+    store.stopUndoCapture(); store.undo();
+    expect(store.getData().tasks.every((task) => !task.deletedAt)).toBe(true);
+    store.softDeleteTask(project.id);
+    for (const id of [project.id, child.id, grandchild.id]) expect(store.getData().tasks.find((task) => task.id === id)?.deletedAt).toBeGreaterThan(0);
+    expect(store.getData().tasks.find((task) => task.id === unrelated.id)?.deletedAt).toBeNull();
+    updates = 0;
+    store.restoreTask(project.id);
+    expect(updates).toBe(1);
+    expect(store.getData().tasks.every((task) => !task.deletedAt)).toBe(true);
+    store.destroy();
+  });
   it('creates a project root in sibling order and protects it from drag or type changes', () => {
     const store = new CortexStore('u');
     store.createTask({ title: 'existing', order: 30, status: 'todo' });

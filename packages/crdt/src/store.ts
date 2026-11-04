@@ -25,12 +25,19 @@ import {
   buildChildrenMap,
   canReparent,
   validateCortexData,
+  validateSavedViews,
+  validateHabitConfig,
+  validateHabitOrder,
   CortexSnapshot,
   Review,
   ReviewPeriod,
   reviewFacts,
   reviewId,
   validReviewPeriod,
+  mindAppearanceOf,
+  validateMindAppearance,
+  type MindAppearance,
+  taskBranchIds,
 } from '@cortex/core';
 
 /**
@@ -268,27 +275,27 @@ export class CortexStore {
   // without racing to replace a nested Y.Map and losing one device's different fields.
   private collectReviews(): Review[] {
     const rows = new Map<string, Record<string, unknown>>();
-    const allowed = new Set(['kind', 'periodStart', 'periodEnd', 'ownerId', 'createdAt', 'updatedAt', 'highlights', 'friction', 'nextSteps', 'facts', 'completedAt']);
+    const allowed = new Set(['kind', 'periodStart', 'periodEnd', 'ownerId', 'createdAt', 'updatedAt', 'highlights', 'friction', 'resolution', 'nextSteps', 'facts', 'completedAt']);
     for (const [key, value] of this.docs.root.getMap('reviewFields')) {
       const split = key.indexOf('/');
       if (split < 0) continue;
       const id = key.slice(0, split), field = key.slice(split + 1);
       if (!/^(daily|weekly)_\d{4}-\d{2}-\d{2}$/.test(id) || !allowed.has(field)) continue;
-      const row = rows.get(id) ?? { id, highlights: '', friction: '', nextSteps: '', facts: null, completedAt: null };
+      const row = rows.get(id) ?? { id, highlights: '', friction: '', resolution: '', nextSteps: '', facts: null, completedAt: null };
       row[field] = value;
       rows.set(id, row);
     }
     return [...rows.values()].filter(row => row.kind && row.periodStart && row.periodEnd) as unknown as Review[];
   }
 
-  updateReview(period: ReviewPeriod, patch: Partial<Pick<Review, 'highlights' | 'friction' | 'nextSteps'>> & { completedAt?: null }): Review {
+  updateReview(period: ReviewPeriod, patch: Partial<Pick<Review, 'highlights' | 'friction' | 'resolution' | 'nextSteps'>> & { completedAt?: null }): Review {
     if (!validReviewPeriod(period)) throw new Error('无效的复盘日期');
-    for (const field of ['highlights', 'friction', 'nextSteps'] as const) if (patch[field] !== undefined && (typeof patch[field] !== 'string' || patch[field]!.length > 100000)) throw new Error('复盘内容过长或格式无效');
+    for (const field of ['highlights', 'friction', 'resolution', 'nextSteps'] as const) if (patch[field] !== undefined && (typeof patch[field] !== 'string' || patch[field]!.length > 100000)) throw new Error('复盘内容过长或格式无效');
     const id = reviewId(period), fields = this.docs.root.getMap('reviewFields'), timestamp = now();
     this.docs.root.transact(() => {
       const base = { kind: period.kind, periodStart: period.start, periodEnd: period.end, ownerId: this.userId, createdAt: timestamp };
       for (const [field, value] of Object.entries(base)) if (!fields.has(`${id}/${field}`)) fields.set(`${id}/${field}`, value);
-      for (const field of ['highlights', 'friction', 'nextSteps'] as const) if (patch[field] !== undefined) {
+      for (const field of ['highlights', 'friction', 'resolution', 'nextSteps'] as const) if (patch[field] !== undefined) {
         fields.set(`${id}/${field}`, patch[field]);
         fields.set(`${id}/completedAt`, null);
       }
@@ -302,7 +309,7 @@ export class CortexStore {
     if (!validReviewPeriod(period)) throw new Error('无效的复盘日期');
     const id = reviewId(period);
     const review = this.getData().reviews.find(item => item.id === id);
-    if (!review || ![review.highlights, review.friction, review.nextSteps].some(value => value.trim())) throw new Error('写下一点收获、反思或下一步，再完成复盘');
+    if (!review || ![review.highlights, review.friction, review.resolution, review.nextSteps].some(value => value.trim())) throw new Error('写下一点收获、反思、解决办法或下一步，再完成复盘');
     if (review.periodEnd !== period.end) throw new Error('复盘周期已经变化，请重新打开这份复盘');
     const timestamp = now(), facts = reviewFacts(this.getData(), period, timestamp);
     this.docs.root.transact(() => {
@@ -357,6 +364,7 @@ export class CortexStore {
   // ---------- Tasks ----------
 
   createTask(patch: Partial<Task> & { title?: string } = {}): Task {
+    const appearance = mindAppearanceOf(patch);
     const t: number = now();
     const task: Task = {
       id: newId(),
@@ -379,6 +387,7 @@ export class CortexStore {
       updatedAt: t,
       completedAt: patch.status === 'done' ? patch.completedAt ?? t : null,
       deletedAt: null,
+      ...appearance,
     };
     this.put('tasks', task as unknown as Record<string, unknown>);
     return task;
@@ -392,6 +401,7 @@ export class CortexStore {
   }
 
   updateTask(id: string, patch: Partial<Task>): void {
+    validateMindAppearance(patch);
     const cur = this.get<Task>('tasks', id);
     if (!cur) return;
     if (isProject(cur) && (patch.parentId != null || patch.kind === 'todo' || patch.project === false)) return;
@@ -414,6 +424,21 @@ export class CortexStore {
     delete safe.id;
     delete safe.ownerId;
     this.patchEntity('tasks', id, { ...safe, updatedAt: now() });
+  }
+
+  /** One gesture = one transaction and undo entry, even for large selections. */
+  setMindAppearance(ids: readonly string[], appearance: MindAppearance): void {
+    const patch = mindAppearanceOf(appearance);
+    if (!Object.keys(patch).length) return;
+    this.stopUndoCapture();
+    this.docs.tasks.transact(() => {
+      for (const id of new Set(ids)) {
+        const task = this.get<Task>('tasks', id);
+        if (!task || task.deletedAt || !Object.entries(patch).some(([key, value]) => task[key as keyof MindAppearance] !== value)) continue;
+        this.updateTask(id, patch);
+      }
+    });
+    this.stopUndoCapture();
   }
 
   /** 设显式优先级(P0~P3);同时落 important/urgent,四象限与优先级永远一致 */
@@ -449,36 +474,90 @@ export class CortexStore {
   }
 
   /** 软删整个子树 */
+  softDeleteTasks(ids: readonly string[]): void {
+    const t = now(), batch = newId();
+    this.stopUndoCapture();
+    this.docs.tasks.transact(() => { for (const id of new Set(ids)) this.deleteTaskBranch(id, t, batch); });
+    this.stopUndoCapture();
+  }
+
   softDeleteTask(id: string): void {
-    const t = now();
+    this.deleteTaskBranch(id, now(), newId());
+  }
+
+  private deleteTaskBranch(id: string, t: number, batch: string): void {
     const visited = new Set<string>();
     const children = buildChildrenMap(this.getData().tasks);
     const walk = (taskId: string) => {
       if (visited.has(taskId)) return;
       visited.add(taskId);
       const cur = this.get<Task>('tasks', taskId);
-      if (!cur) return;
-      this.updateTask(taskId, { deletedAt: cur.deletedAt ?? t });
+      if (!cur || cur.deletedAt != null) return;
+      this.updateTask(taskId, { deletedAt: t, deleteBatchId: batch });
       for (const child of children.get(taskId) ?? []) {
         if (child.deletedAt) continue;
         walk(child.id);
       }
     };
-    walk(id);
+    this.docs.tasks.transact(() => walk(id));
   }
 
   restoreTask(id: string): void {
-    const visited = new Set<string>();
-    const children = buildChildrenMap(this.getData().tasks);
-    const walk = (taskId: string) => {
-      if (visited.has(taskId)) return;
-      visited.add(taskId);
-      const cur = this.get<Task>('tasks', taskId);
-      if (!cur) return;
-      this.updateTask(taskId, { deletedAt: null });
-      for (const child of children.get(taskId) ?? []) walk(child.id);
-    };
-    walk(id);
+    const tasks = this.getData().tasks;
+    const byId = new Map(tasks.map((task) => [task.id, task]));
+    const target = byId.get(id);
+    if (!target || target.deletedAt == null) return;
+    const branch = taskBranchIds(tasks, [id]);
+    const restore = tasks.filter((task) => branch.has(task.id) && task.deletedAt != null &&
+      (target.deleteBatchId ? task.deleteBatchId === target.deleteBatchId : !task.deleteBatchId && task.deletedAt === target.deletedAt));
+    // Restore the path needed to reach a child without restoring its siblings.
+    const path = new Set<string>();
+    let parent = target.parentId;
+    while (parent && !path.has(parent)) {
+      path.add(parent);
+      parent = byId.get(parent)?.parentId ?? null;
+    }
+    this.stopUndoCapture();
+    this.docs.tasks.transact(() => {
+      for (const task of restore) this.updateTask(task.id, { deletedAt: null, deleteBatchId: null, ...(task.status === 'archived' ? { status: 'todo' as const } : {}) });
+      for (const ancestor of path) {
+        const task = byId.get(ancestor);
+        if (task && (task.deletedAt != null || task.status === 'archived')) this.updateTask(ancestor, { deletedAt: null, deleteBatchId: null, ...(task.status === 'archived' ? { status: 'todo' as const } : {}) });
+      }
+    });
+    this.stopUndoCapture();
+  }
+
+  /** Explicit recycle-bin deletion. Never removes live tasks or participates in undo. */
+  permanentlyDeleteTasks(ids: readonly string[]): number {
+    const data = this.getData();
+    const deleted = new Set(data.tasks.filter((task) => task.deletedAt != null).map((task) => task.id));
+    const branch = taskBranchIds(data.tasks, ids.filter((id) => deleted.has(id)));
+    const removed = new Set(data.tasks.filter((task) => branch.has(task.id) && task.deletedAt != null).map((task) => task.id));
+    if (!removed.size) return 0;
+    const byId = new Map(data.tasks.map((task) => [task.id, task]));
+    const origin = 'cortex:permanent-delete';
+    this.stopUndoCapture();
+    this.docs.tasks.transact(() => {
+      for (const task of data.tasks) {
+        if (removed.has(task.id) || !task.parentId || !removed.has(task.parentId)) continue;
+        let parent = task.parentId;
+        const seen = new Set<string>();
+        while (parent && removed.has(parent) && !seen.has(parent)) { seen.add(parent); parent = byId.get(parent)?.parentId ?? ''; }
+        this.updateTask(task.id, { parentId: parent && !seen.has(parent) ? parent : null });
+      }
+      const items = this.entityMap('tasks');
+      for (const id of removed) items.delete(id);
+    }, origin);
+    this.docs.links.transact(() => {
+      for (const link of data.links) if (removed.has(link.taskId)) this.entityMap('links').delete(link.id);
+    }, origin);
+    // Calendar and focus history remain useful after the source task is gone.
+    for (const docId of ['events', 'sessions'] as const) this.docs[docId].transact(() => {
+      for (const item of data[docId]) if (item.taskId && removed.has(item.taskId)) this.patchEntity(docId, item.id, { taskId: null });
+    }, origin);
+    this.stopUndoCapture();
+    return removed.size;
   }
 
   /** 物理清除已软删超期的任务(回收站策略) */
@@ -584,6 +663,7 @@ export class CortexStore {
   // ---------- Habits ----------
 
   createHabit(patch: Partial<Habit> & { name: string }): Habit {
+    validateHabitConfig(patch);
     const habit: Habit = {
       id: newId(),
       name: patch.name,
@@ -591,6 +671,7 @@ export class CortexStore {
       color: patch.color ?? '#22d3ee',
       cadence: patch.cadence ?? { type: 'daily' },
       reminderAt: patch.reminderAt,
+      reminderEnabled: patch.reminderEnabled,
       linkedTaskTemplateId: patch.linkedTaskTemplateId ?? null,
       targetPerDay: patch.targetPerDay ?? 1,
       ownerId: this.userId,
@@ -603,18 +684,16 @@ export class CortexStore {
   }
 
   updateHabit(id: string, patch: Partial<Habit>): void {
+    validateHabitConfig(patch);
     const cur = this.get<Habit>('habits', id);
     if (!cur) return;
     this.patchEntity('habits', id, patch);
   }
 
   deleteHabit(id: string): void {
+    // Keep immutable check-ins with a soft-deleted habit. One undo restores the
+    // habit together with its history, including check-ins arriving remotely.
     this.updateHabit(id, { deletedAt: now(), archivedAt: now() });
-    this.entityMap('habitLogs').doc!.transact(() => {
-      for (const [lid, ymap] of this.entityMap('habitLogs').entries()) {
-        if (ymap.get('habitId') === id) this.entityMap('habitLogs').delete(lid);
-      }
-    });
   }
 
   /** Append immutable operations; concurrent increments and cancellation of the same unit converge. */
@@ -676,6 +755,9 @@ export class CortexStore {
   // ---------- Settings ----------
 
   updateSettings(patch: Partial<Settings>): void {
+    if (patch.savedViews !== undefined) validateSavedViews(patch.savedViews);
+    if (patch.habitOrder !== undefined) validateHabitOrder(patch.habitOrder);
+    if (patch.habitSort !== undefined && patch.habitSort !== 'time' && patch.habitSort !== 'manual') throw new Error('习惯排序方式无效');
     const map = this.docs.root.getMap<unknown>('settings');
     map.doc!.transact(() => {
       for (const [k, v] of Object.entries(patch)) map.set(k, v);
@@ -723,7 +805,20 @@ export class CortexStore {
       const after = this.getData();
       return Math.max(0, after.tasks.length + after.events.length + after.reviews.length - beforeCount);
     }
-    const data = validateCortexData(envelope.data ?? input);
+    let data = validateCortexData(envelope.data ?? input);
+    if (data.settings?.habitOrder && this.docs.root.getMap('settings').has('habitOrder')) {
+      const existing = this.getData().settings.habitOrder;
+      const ids = new Set(existing);
+      const merged = [...existing, ...data.settings.habitOrder.filter(id => !ids.has(id))];
+      validateHabitOrder(merged);
+      data = { ...data, settings: { ...data.settings, habitOrder: merged } };
+    }
+    if (data.settings?.savedViews && this.docs.root.getMap('settings').has('savedViews')) {
+      const existing = this.getData().settings.savedViews;
+      const merged = [...existing, ...data.settings.savedViews.filter((view) => !existing.some((old) => old.id === view.id))];
+      validateSavedViews(merged);
+      data = { ...data, settings: { ...data.settings, savedViews: merged } };
+    }
     return this.withUndoSuspended(() => this.importJSONInner(data));
   }
 
@@ -764,6 +859,8 @@ export class CortexStore {
     const settings = this.docs.root.getMap('settings');
     for (const [key, value] of Object.entries(data.settings ?? {})) {
       if (!settings.has(key)) settings.set(key, value);
+      else if (key === 'savedViews') settings.set(key, value);
+      else if (key === 'habitOrder') settings.set(key, value);
       else if (key === 'servers' && Array.isArray(value)) {
         const existing = this.getData().settings.servers;
         settings.set(key, [...existing, ...value.filter((server) => !existing.some((old) => old.id === server.id))]);

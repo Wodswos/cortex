@@ -13,14 +13,15 @@ export default defineConfig({
   plugins: [react(), tailwindcss(), {
     name: 'cortex-offline-shell',
     apply: 'build',
-    generateBundle(_options, bundle) {
+    // CSS-only lazy chunks are removed by Vite. Cache the final emitted assets.
+    generateBundle: { order: 'post', handler(_options, bundle) {
       const assets = Object.keys(bundle).filter((name) => /\.(?:js|css)$/.test(name)).map((name) => `/${name}`).sort();
       const version = createHash('sha256').update(JSON.stringify(assets)).digest('hex').slice(0, 12);
       const source = readFileSync(path.join(root, 'public/sw.js'), 'utf8')
         .replace("'cortex-v3-dev'", `'cortex-v3-${version}'`)
         .replace('const PRECACHE_ASSETS = [];', `const PRECACHE_ASSETS = ${JSON.stringify(assets)};`);
       this.emitFile({ type: 'asset', fileName: 'sw.js', source });
-    },
+    } },
   }],
   resolve: {
     alias: {

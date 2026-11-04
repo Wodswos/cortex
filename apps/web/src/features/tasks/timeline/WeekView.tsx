@@ -22,10 +22,14 @@ export function WeekView({
   date,
   onDateChange,
   onCreateTask,
+  rangeStart,
+  dayCount = 7,
 }: {
   date: Date;
   onDateChange: (d: Date) => void;
   onCreateTask?: (dueAt: number, event: React.MouseEvent) => void;
+  rangeStart?: Date;
+  dayCount?: number;
 }) {
   const data = useTaskViewData();
   const scroll = useRef<HTMLDivElement>(null);
@@ -33,8 +37,8 @@ export function WeekView({
     if (scroll.current) scroll.current.scrollTop = 7 * PX_PER_HOUR;
   }, []);
   const ui = useUI();
-  const weekStart = startOfWeek(date, data.settings.weekStartsOn);
-  const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
+  const start = (rangeStart ?? startOfWeek(date, data.settings.weekStartsOn)).getTime();
+  const days = useMemo(() => Array.from({ length: dayCount }, (_, i) => addDays(start, i)), [start, dayCount]);
   const todayKey = dayKeyOf(new Date());
   const nowMin = minutesOfDay(new Date());
 
@@ -52,7 +56,7 @@ export function WeekView({
 
   return (
     <div ref={scroll} className="h-full overflow-auto px-4 pb-6 md:px-6">
-      <div className="flex min-w-[640px]">
+      <div className="flex" style={{ minWidth: Math.max(640, 40 + dayCount * 88) }}>
         {/* 时刻度 */}
         <div className="w-10 shrink-0 pt-9">
           {Array.from({ length: 24 }, (_, h) => (

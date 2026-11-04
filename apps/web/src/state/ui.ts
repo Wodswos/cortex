@@ -9,6 +9,7 @@ interface UIState {
   filter: TaskFilter;
   taskMenu: { taskId: string; ids: string[]; x: number; y: number } | null; // 任务右键菜单锚点(ids=批量操作对象)
   tmuxView: { serverId: string; session: string } | null; // tmux 会话直连终端
+  taskDeletion: { userId: string; ids: string[] } | null;
   setQuickCapture: (open: boolean) => void;
   setCommand: (open: boolean) => void;
   selectTask: (id: string | null) => void;
@@ -16,6 +17,8 @@ interface UIState {
   setFilter: (f: TaskFilter) => void;
   openTaskMenu: (taskId: string, x: number, y: number, ids?: string[]) => void;
   closeTaskMenu: () => void;
+  requestTaskDeletion: (userId: string, ids: string[]) => void;
+  cancelTaskDeletion: () => void;
   openTmuxView: (serverId: string, session: string) => void;
   closeTmuxView: () => void;
   // 整棵子树折叠/展开(下钻到全部后代)
@@ -31,6 +34,7 @@ export const useUI = create<UIState>((set, get) => ({
   filter: { kind: 'all' },
   taskMenu: null,
   tmuxView: null,
+  taskDeletion: null,
   setQuickCapture: (open) => set({ quickCaptureOpen: open }),
   setCommand: (open) => set({ commandOpen: open }),
   selectTask: (id) => set({ selectedTaskId: id }),
@@ -38,6 +42,8 @@ export const useUI = create<UIState>((set, get) => ({
   setFilter: (filter) => set({ filter }),
   openTaskMenu: (taskId, x, y, ids) => set({ taskMenu: { taskId, ids: ids && ids.length > 0 ? ids : [taskId], x, y } }),
   closeTaskMenu: () => set({ taskMenu: null }),
+  requestTaskDeletion: (userId, ids) => set({ taskDeletion: { userId, ids: [...new Set(ids)] }, taskMenu: null }),
+  cancelTaskDeletion: () => set({ taskDeletion: null }),
   openTmuxView: (serverId, session) => set({ tmuxView: { serverId, session } }),
   closeTmuxView: () => set({ tmuxView: null }),
   collapseSubtree: (rootId, children) => {

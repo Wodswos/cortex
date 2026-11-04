@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation, useSearchParams } from 'react-router';
+import { useSearchParams } from 'react-router';
 import { CalendarClock, ChevronRight, Minus, Plus, Folder } from 'lucide-react';
 import { cn } from '@cortex/ui';
 import {
-  Task, activeTasks, buildChildrenMap, taskRange, startOfWeek, startOfDay, addDays, fmtHM, WEEKDAY_ZH, weekdayOf, calendarDaysBetween, calendarPosition, timeAtCalendarPosition,
+  Task, activeTasks, buildChildrenMap, taskRange, startOfDay, addDays, fmtHM, WEEKDAY_ZH, weekdayOf, calendarDaysBetween, calendarPosition, timeAtCalendarPosition,
   taskViewStatus, TaskViewStatus, priorityOf, isStructural, fullyDoneIds,
 } from '@cortex/core';
 import { useCortex } from '@cortex/crdt';
@@ -11,6 +11,8 @@ import { useTaskViewData } from '../useTaskViewData';
 import { useUI } from '@/state/ui';
 import { TaskCheckbox, PRIORITY_VAR } from '@/shared/components';
 import { ganttDragPatch, ganttDragRange, type GanttDragMode } from './drag';
+import { useTaskWindow } from '../TaskWindowControls';
+import { createWheelPager } from './wheelPaging';
 
 /**
  * 甘特图:任务树 × 天轴。
@@ -19,7 +21,8 @@ import { ganttDragPatch, ganttDragRange, type GanttDragMode } from './drag';
  * - 排期方式:拖条整体平移 / 拖条两端伸缩(**吸附到 5 分钟**,不是整天)/
  *   在行内空白处按下拖出一段 / 从「未排期」坞拖到某一天。
  * - 条的颜色 = 优先级(P0 红 / P1 橙 / P2 蓝 / P3 灰),整条无边框。
- *   未开始 = 浅色透明;已完成 = **绿色**(完成度优先于优先级,一眼可辨);已逾期 = 实色。
+ *   条色不随开始/截止时间变化;已完成 = **绿色**(完成度优先于优先级,一眼可辨)。
+ *   未开始/进行中/逾期由名称旁的状态点提示。
  *   逾期条右上角带红色「!」角标;结构节点(kind=node)不画条、不进未排期坞,只作分组行。
  */
 
@@ -60,9 +63,6 @@ interface Draft {
   curDay: number;
 }
 
-const isoDay = (d: Date) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-
 /** 状态点(名字列左侧小圆点),颜色与 StatusBadge 语义一致 */
 const STATUS_DOT: Record<TaskViewStatus, string> = {
   done: 'bg-[var(--muted-foreground)]',
@@ -94,18 +94,9 @@ export function GanttView() {
   const collapsed = useUI((s) => s.collapsed);
   const [params] = useSearchParams();
   const projectId = params.get('project');
-  const location = useLocation();
-  const scope = params.get('scope');
-  const weekStartsOn = data.settings.weekStartsOn;
-  /** 时间窗口:默认本周(周一 → 周日) */
-  const [winStart, setWinStart] = useState(() => startOfWeek(new Date(), weekStartsOn));
-  const [winDays, setWinDays] = useState(7);
-  useEffect(() => {
-    if (scope === 'week') {
-      setWinStart(startOfWeek(new Date(), weekStartsOn));
-      setWinDays(7);
-    }
-  }, [scope, weekStartsOn, location.key]);
+  const { range, setRange } = useTaskWindow(true);
+  const winStart = new Date(range.start);
+  const winDays = range.days;
   const [dragging, setDragging] = useState<BarDrag | null>(null);
   const dragRef = useRef<BarDrag | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -115,6 +106,40 @@ export function GanttView() {
   const [trayDrag, setTrayDrag] = useState<{ taskId: string; title: string; x: number; y: number } | null>(null);
   const suppressClick = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const wheelContext = useRef({ range, setRange, blocked: false });
+  wheelContext.current = { range, setRange, blocked: !!dragging || !!draft || !!trayDrag };
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const pager = createWheelPager();
+    let pointerDown = false;
+    const down = () => { pointerDown = true; pager.reset(); };
+    const up = () => { pointerDown = false; };
+    const wheel = (event: WheelEvent) => {
+      const currentParams = new URLSearchParams(window.location.search);
+      if (window.location.pathname !== '/tasks' || currentParams.get('view') !== 'gantt' || currentParams.get('project') !== projectId) { pager.reset(); return; }
+      if (event.defaultPrevented || !event.cancelable || pointerDown || wheelContext.current.blocked) { pager.reset(); return; }
+      const result = pager.sample({ deltaX: event.deltaX, deltaY: event.deltaY, deltaMode: event.deltaMode, ctrlKey: event.ctrlKey, metaKey: event.metaKey, shiftKey: event.shiftKey, time: performance.now() }, element.clientWidth);
+      if (result.prevent) event.preventDefault();
+      if (result.direction) {
+        const { range: current, setRange: change } = wheelContext.current;
+        change(addDays(current.start, current.days * result.direction).getTime(), current.days);
+        element.scrollLeft = 0;
+      }
+    };
+    element.addEventListener('wheel', wheel, { passive: false });
+    element.addEventListener('pointerdown', down, true);
+    window.addEventListener('pointerup', up, true);
+    window.addEventListener('pointercancel', up, true);
+    window.addEventListener('blur', up);
+    return () => {
+      element.removeEventListener('wheel', wheel);
+      element.removeEventListener('pointerdown', down, true);
+      window.removeEventListener('pointerup', up, true);
+      window.removeEventListener('pointercancel', up, true);
+      window.removeEventListener('blur', up);
+    };
+  }, [projectId]);
   /** 滚动容器宽度 → 列宽自适应:窗口天数少时天格铺满屏宽,不再挤成一小条 */
   const [boxW, setBoxW] = useState(0);
   useEffect(() => {
@@ -293,47 +318,10 @@ export function GanttView() {
     return `${d.getMonth() + 1}/${d.getDate()}`;
   };
 
-  const preset = (label: string, fn: () => void, active: boolean) => (
-    <button
-      key={label}
-      onClick={fn}
-      className={cn(
-        'rounded-full px-2.5 py-1 text-xs transition-all',
-        active ? 'gradient-bg text-white' : 'glass text-muted hover:text-foreground',
-      )}
-    >
-      {label}
-    </button>
-  );
-
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* 窗口选择:默认本周;预设 + 起止日期 + 缩放 */}
+      {/* 时间轴缩放与图例；时间区间由工作区顶栏统一管理。 */}
       <div className="flex shrink-0 flex-wrap items-center gap-2 px-4 py-3 md:px-6">
-        {preset('本周', () => { setWinStart(startOfWeek(new Date(), weekStartsOn)); setWinDays(7); }, winDays === 7 && startOfDay(winStart).getTime() === startOfDay(startOfWeek(new Date(), weekStartsOn)).getTime())}
-        {preset('下周', () => { setWinStart(addDays(startOfWeek(new Date(), weekStartsOn), 7)); setWinDays(7); }, winDays === 7 && startOfDay(winStart).getTime() === startOfDay(addDays(startOfWeek(new Date(), weekStartsOn), 7)).getTime())}
-        {preset('本月', () => { const n = new Date(); setWinStart(new Date(n.getFullYear(), n.getMonth(), 1)); setWinDays(new Date(n.getFullYear(), n.getMonth() + 1, 0).getDate()); }, false)}
-        {preset('近 30 天', () => { setWinStart(startOfDay(new Date())); setWinDays(30); }, winDays === 30 && startOfDay(winStart).getTime() === startOfDay(new Date()).getTime())}
-        <div className="flex items-center gap-1 text-xs text-muted">
-          <input
-            type="date"
-            value={isoDay(winStart)}
-            onChange={(e) => e.target.value && setWinStart(new Date(`${e.target.value}T00:00:00`))}
-            className="h-8 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2 text-xs text-foreground outline-none"
-          />
-          <span>~</span>
-          <input
-            type="date"
-            value={isoDay(new Date(dayAt(winDays - 1)))}
-            min={isoDay(winStart)}
-            onChange={(e) => {
-              if (!e.target.value) return;
-              const end = new Date(`${e.target.value}T00:00:00`).getTime();
-              setWinDays(Math.max(1, calendarDaysBetween(winStartTime, end) + 1));
-            }}
-            className="h-8 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2 text-xs text-foreground outline-none"
-          />
-        </div>
         {/* 缩放:放大时间轴,拖动才能精确到分钟 */}
         <div className="flex items-center gap-1">
           <button
@@ -367,14 +355,14 @@ export function GanttView() {
             </span>
           ))}
           <span className="text-muted/40">·</span>
-          <span>淡条 = 未开始</span>
           <span className="flex items-center gap-1">
             <span className="h-2 w-3 rounded-sm" style={{ background: 'color-mix(in srgb, var(--success) 75%, transparent)' }} />
             已完成
           </span>
         </span>
       </div>
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto pb-6">
+      <p className="shrink-0 px-4 pb-2 text-[11px] text-muted md:px-6">双指左右滑动切换整个区间 · 放大后可用 Shift + 滚轮平移时间轴</p>
+      <div ref={scrollRef} data-gantt-scroll className="min-h-0 flex-1 overflow-auto overscroll-x-contain pb-6">
         <div className="inline-block min-w-full">
           {/* 日期表头(sticky top) */}
           <div className="sticky top-0 z-20 flex bg-[var(--background)]/95 backdrop-blur">
@@ -514,21 +502,19 @@ export function GanttView() {
                         style={{
                           left: xOf(visibleRange.start),
                           width: Math.max(8, xOf(visibleRange.end) - xOf(visibleRange.start)),
-                          // 整条无边框:未开始 = 浅色透明的优先级色;已完成 = 绿色(完成态优先于优先级色);其余 = 实心优先级色
+                          // 日期调整只改变排期与状态点,不改变优先级条色;完成态保留绿色。
                           background:
                             vs.kind === 'done'
                               ? 'color-mix(in srgb, var(--success) 75%, transparent)'
-                              : vs.kind === 'planned'
-                                ? `color-mix(in srgb, ${pColor} 26%, transparent)`
-                                : pColor,
-                          color: vs.kind === 'planned' ? pColor : '#fff',
+                              : pColor,
+                          color: '#fff',
                         }}
                         title={`${r.task.title || 'Untitled'} · ${p} · ${vs.label} · ${fmtMD(visibleRange.start)} ${fmtHM(visibleRange.start)} ~ ${fmtMD(visibleRange.end)} ${fmtHM(visibleRange.end)}${isDragging && dragging ? ` → ${dragging.mode === 'move' ? '平移' : dragging.mode === 'start' ? '开始端' : '截止端'} ${fmtDeltaMin(dragging.deltaMin)}` : ''}`}
                       >
                         {barW > 60 && (
                           <span className="truncate px-2 leading-none">{r.task.title || 'Untitled'}</span>
                         )}
-                        {/* 逾期角标「!」:红底白字,呼应用户对超时的强提醒;完成/未开始不加角标(颜色已表达) */}
+                        {/* 逾期角标「!」:红底白字;完成/未开始由名称旁状态点提示,不加角标。 */}
                         {vs.kind === 'overdue' && (
                           <span className="absolute right-0.5 top-0.5 flex h-3 w-3 items-center justify-center rounded-full bg-[var(--danger)] text-[8px] font-bold leading-none text-white ring-1 ring-white/60">!</span>
                         )}

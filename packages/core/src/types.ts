@@ -1,4 +1,6 @@
 /** 领域模型 — 见 DESIGN.md §3。时间戳一律 UTC epoch ms,渲染按本地时区。 */
+import type { MindAppearance } from './mindAppearance';
+import { DEFAULT_SAVED_VIEWS, type SavedTaskView } from './savedViews';
 
 export type ID = string;
 
@@ -6,7 +8,7 @@ export type ID = string;
 export type TaskStatus = 'inbox' | 'todo' | 'doing' | 'done' | 'archived';
 export type Priority = 'P0' | 'P1' | 'P2' | 'P3';
 
-export interface Task {
+export interface Task extends MindAppearance {
   id: ID;
   title: string;
   notes?: string;
@@ -35,6 +37,7 @@ export interface Task {
   updatedAt: number;
   completedAt?: number | null;
   deletedAt?: number | null; // 软删 = 回收站
+  deleteBatchId?: ID | null; // 一次子树删除的标识，恢复时保留更早单独删除的子项
 }
 
 export type EventKind = 'focus' | 'meeting' | 'personal' | 'routine';
@@ -108,6 +111,7 @@ export interface Habit {
   color: string; // hex,热力图/卡片用
   cadence: Cadence;
   reminderAt?: string; // 'HH:mm' 本地时区
+  reminderEnabled?: boolean; // 旧数据有时间但没有开关时，沿用开启提醒
   linkedTaskTemplateId?: ID | null;
   targetPerDay?: number; // 每日多次打卡目标,如喝水 8 杯
   ownerId: ID;
@@ -174,6 +178,7 @@ export interface Review {
   periodEnd: string;
   highlights: string;
   friction: string;
+  resolution: string;
   nextSteps: string;
   facts: ReviewFacts | null;
   completedAt: number | null;
@@ -183,6 +188,9 @@ export interface Review {
 }
 
 export interface Settings {
+  savedViews: SavedTaskView[];
+  habitSort: 'time' | 'manual';
+  habitOrder: string[];
   accent: Accent;
   pomodoro: PomodoroSettings;
   weekStartsOn: 0 | 1; // 0=Sun 1=Mon
@@ -198,6 +206,9 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
+  savedViews: DEFAULT_SAVED_VIEWS,
+  habitSort: 'time',
+  habitOrder: [],
   accent: 'cyan-violet',
   pomodoro: DEFAULT_POMODORO,
   weekStartsOn: 1,

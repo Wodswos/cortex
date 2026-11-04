@@ -2,7 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router';
 import { Inbox, ArrowUpRight, Trash2, Plus } from 'lucide-react';
 import { Button, EmptyState, Badge } from '@cortex/ui';
-import { inboxTasks, parseCapture, isStructural } from '@cortex/core';
+import { inboxTasks, parseCapture, isStructural, isProject } from '@cortex/core';
 import { useCortex, useCortexData } from '@cortex/crdt';
 import { useUI } from '@/state/ui';
 import { TaskCheckbox, PriorityDot, TagChip, DueBadge } from '@/shared/components';
@@ -76,7 +76,10 @@ export default function InboxPage() {
                   size="icon-sm"
                   variant="ghost"
                   className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
-                  onClick={() => store.softDeleteTask(t.id)}
+                  onClick={() => {
+                    if (isProject(t)) ui.requestTaskDeletion(store.userId, [t.id]);
+                    else store.softDeleteTask(t.id);
+                  }}
                   aria-label="丢弃"
                 >
                   <Trash2 className="h-3.5 w-3.5" />

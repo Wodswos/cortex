@@ -55,7 +55,7 @@ test('one click hides or shows completed tasks in all five views and persists th
     if (view === '甘特图') return page.locator(`[data-gantt-bar="${id}"]`);
     return page.getByText(id === 'complete' ? 'Completed example' : 'Pending example', { exact: true });
   };
-  for (const name of ['列表', '导图', '四象限', '甘特图', '时间线']) {
+  for (const name of ['列表', '导图', '四象限', '甘特图', '日历']) {
     await page.getByRole('tablist', { name: '任务视图' }).getByRole('tab', { name, exact: true }).click();
     await expect(checkbox).not.toBeChecked();
     await expect(target(name, 'complete')).toHaveCount(1);
@@ -116,3 +116,54 @@ test('Gantt handles keep the opposite endpoint stable across midnight, and movin
   data = await drag('move_only', 'move', 0.25);
   expect(data.tasks.find((value: any) => value.id === 'move_only')).toMatchObject({ startAt: stamp(21, 6), dueAt: stamp(22, 2) });
 });
+
+for (const scheme of ['light', 'dark'] as const) {
+  test(`Gantt bar colors stay stable after scheduling a future task in ${scheme} mode`, async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 960 });
+    await page.emulateMedia({ colorScheme: scheme });
+    await page.clock.install({ time: fixedNow });
+    await seed(page, { tasks: [
+      task('future_deadline', { dueAt: stamp(22, 18) }),
+      ...['P0', 'P1', 'P2', 'P3'].flatMap(priority => [
+        task(`running_${priority}`, { priority, startAt: stamp(20, 9), dueAt: stamp(24, 18) }),
+        task(`planned_${priority}`, { priority, startAt: stamp(22, 9), dueAt: stamp(24, 18) }),
+      ]),
+      task('completed', { status: 'done', completedAt: stamp(21, 11), startAt: stamp(20, 9), dueAt: stamp(24, 18) }),
+    ] });
+    await page.goto('/tasks?view=gantt');
+    const bar = page.locator('[data-gantt-bar="future_deadline"]');
+    const paint = (target: Locator) => target.evaluate(element => {
+      const style = getComputedStyle(element);
+      return { background: style.backgroundColor, color: style.color };
+    });
+    await expect(bar).toHaveAttribute('title', /进行中/);
+    const original = await paint(bar);
+    const handle = bar.getByTitle('拖动调整截止时间(5 分钟粒度)', { exact: true });
+    const bounds = (await handle.boundingBox())!;
+    const dayWidth = (await page.locator('[data-gantt-track]').first().boundingBox())!.width / 7;
+    const x = bounds.x + bounds.width / 2, y = bounds.y + bounds.height / 2;
+    await page.mouse.move(x, y); await page.mouse.down();
+    await page.mouse.move(x + dayWidth, y, { steps: 12 });
+    await expect.poll(() => paint(bar)).toEqual(original);
+    await page.mouse.up();
+    await expect(bar).toHaveAttribute('title', /未开始/);
+    await expect.poll(() => paint(bar)).toEqual(original);
+    const priorityColors = new Set<string>();
+    for (const priority of ['P0', 'P1', 'P2', 'P3']) {
+      const running = page.locator(`[data-gantt-bar="running_${priority}"]`);
+      const planned = page.locator(`[data-gantt-bar="planned_${priority}"]`);
+      await expect(planned).toHaveAttribute('title', /未开始/);
+      expect(await paint(planned)).toEqual(await paint(running));
+      priorityColors.add((await paint(running)).background);
+    }
+    expect(priorityColors.size).toBe(4);
+    expect((await paint(page.locator('[data-gantt-bar="completed"]'))).background).not.toBe(original.background);
+    const data = await exported(page);
+    expect(data.tasks.find((value: any) => value.id === 'future_deadline')).toMatchObject({
+      status: 'todo', priority: 'P3', startAt: stamp(22), dueAt: stamp(23, 18),
+    });
+    await page.goto('/tasks?view=gantt');
+    await expect(bar).toHaveAttribute('title', /未开始/);
+    await expect.poll(() => paint(bar)).toEqual(original);
+  });
+}

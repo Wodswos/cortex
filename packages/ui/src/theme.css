@@ -9,6 +9,23 @@
 /* Both color schemes share the same neutral surfaces and accent hierarchy. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Reserve an explicit arrow gutter on every single-value native select. Browser
+   arrows otherwise ignore the compact controls' padding, especially on macOS. */
+select:not([multiple]):not([size]),
+select:not([multiple])[size='1'] {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-inline-end: 32px !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23707783' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-position: right 10px center;
+  background-size: 14px 14px;
+  background-repeat: no-repeat;
+  text-overflow: ellipsis;
+}
+@media (forced-colors: active) {
+  select:not([multiple]) { appearance: auto; -webkit-appearance: auto; background-image: none; }
+}
+
 /* React Flow 背景网点(SVG)不能吃指针事件:框选/点空白取消选中等
    都依赖 event.target 是 pane 本身,被背景图案截走后手势全部失效。
    同理,导图的连线不需要点击/悬停交互,描边也不许截走指针事件。 */
@@ -38,6 +55,12 @@
   --success: #598675;
   --warning: #ad8450;
   --glow: none;
+  --mind-root: #34445f;
+  --mind-root-text: #ffffff;
+  --mind-root-muted: #d0d8e5;
+  --mind-warning: #956c36;
+  --mind-canvas: #fcfcfd;
+  --mind-grid: #eef0f4;
   color-scheme: light;
 }
 
@@ -58,6 +81,12 @@
   --success: #34d399;
   --warning: #fbbf24;
   --glow: none;
+  --mind-root: #536782;
+  --mind-root-text: #ffffff;
+  --mind-root-muted: #e1e7ef;
+  --mind-warning: #d7ba8d;
+  --mind-canvas: #1b1d21;
+  --mind-grid: #292d35;
   color-scheme: dark;
 }
 
@@ -285,9 +314,14 @@ body::before {
 }
 
 .workspace-sidebar {
-  width: 224px;
+  flex-shrink: 0;
+  width: var(--sidebar-width, 224px);
+  max-width: calc(100vw - 48px);
   background: var(--sidebar);
   border-right: 1px solid var(--border);
+}
+@media (min-width: 48rem) {
+  .workspace-sidebar { position: relative; }
 }
 .workspace-nav {
   display: flex;
@@ -314,6 +348,52 @@ body::before {
   stroke-width: 1.65;
   flex-shrink: 0;
 }
+/* A project is one hit row; its actions share the same selection background. */
+.workspace-project-row { color: var(--muted-foreground); }
+.workspace-project-row:hover { background: var(--surface); color: var(--foreground); }
+.workspace-project-row[data-selected='true'] { background: var(--selection); color: var(--accent-solid); }
+.workspace-project-row .workspace-nav,
+.workspace-project-row .workspace-nav:hover,
+.workspace-project-row .workspace-nav[aria-current='page'] { background: transparent; color: inherit; }
+.workspace-project-row :is(a, button):focus-visible { outline: none; }
+.workspace-project-row:has(:focus-visible) { outline: 1px solid var(--accent-solid); outline-offset: 1px; }
+@media (hover: hover) and (pointer: fine) {
+  .workspace-project-row .workspace-project-action { opacity: 0; }
+  .workspace-project-row:hover .workspace-project-action,
+  .workspace-project-row:focus-within .workspace-project-action { opacity: 1; }
+  .habit-row .habit-drag-handle { opacity: 0; }
+  .habit-row:hover .habit-drag-handle,
+  .habit-row:focus-within .habit-drag-handle { opacity: 1; }
+}
+/* Trackpad navigation uses the normal pointer. Only an active drag shows a grab. */
+.mindmap-flow .react-flow__pane:not(.dragging),
+.mindmap-flow .react-flow__node:not(.dragging) { cursor: default; }
+.mindmap-flow .react-flow__pane.dragging,
+.mindmap-flow .react-flow__node.dragging { cursor: grabbing; }
+
+/* Hover and selection share one outer frame, keeping its geometry stable when
+   pressed. This never changes the card's size or connection handles. */
+.mind-node::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border: 2px solid color-mix(in srgb, var(--accent-solid) 35%, transparent);
+  border-radius: 16px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 80ms ease-out;
+}
+.mind-node-selected::after {
+  border-color: var(--accent-solid);
+  opacity: 1;
+  transition: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .mindmap-flow .react-flow__node:not(.dragging) .mind-node:not(.mind-node-selected):hover::after {
+    opacity: 1;
+  }
+}
+
 .workspace-section {
   margin: 24px 12px 7px;
   font-size: 11px;

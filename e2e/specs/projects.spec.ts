@@ -74,7 +74,7 @@ test('project views remember each project after navigation and reload, and keep 
   const longTitle = 'Project A with a title much longer than the title slot allows';
   await seed(page, { tasks: [task('a', longTitle, { kind: 'node' }), task('b', 'Project B', { kind: 'node' })] });
   await page.goto('/tasks?project=a');
-  await expect(views(page).getByRole('tab')).toHaveText(['列表', '导图', '四象限', '甘特图', '时间线']);
+  await expect(views(page).getByRole('tab')).toHaveText(['列表', '导图', '四象限', '甘特图', '日历']);
   const title = page.getByRole('heading', { name: longTitle, exact: true });
   const selector = (await views(page).boundingBox())!;
   const titleBox = (await title.boundingBox())!;
@@ -93,7 +93,7 @@ test('project views remember each project after navigation and reload, and keep 
   await expect(views(page).getByRole('tab', { name: '四象限', exact: true })).toHaveAttribute('data-state', 'active');
   expect((await views(page).boundingBox())!.x).toBeCloseTo(selector.x, 0);
   await page.setViewportSize({ width: 390, height: 844 });
-  for (const name of ['列表', '导图', '四象限', '甘特图', '时间线']) await expect(views(page).getByRole('tab', { name, exact: true })).toBeVisible();
+  for (const name of ['列表', '导图', '四象限', '甘特图', '日历']) await expect(views(page).getByRole('tab', { name, exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
@@ -133,8 +133,8 @@ test('all five project views stay in their project, show full task branches by d
   await expect(page.getByText('A future action', { exact: true })).toHaveCount(0);
   // The root is represented by the page heading, not duplicated as a Gantt row.
   await expect(page.getByText('Scope A', { exact: true })).toHaveCount(2); // sidebar + heading
-  await views(page).getByRole('tab', { name: '时间线', exact: true }).click();
-  await expect(page.getByRole('tab', { name: '周', exact: true })).toHaveAttribute('data-state', 'active');
+  await views(page).getByRole('tab', { name: '日历', exact: true }).click();
+  await expect(page.getByRole('combobox', { name: '任务时间范围', exact: true })).toHaveValue('week');
   await expect(page.locator('[data-calendar-week-date]').first()).toHaveAttribute('data-calendar-week-date', weekStart);
   await expect(page.getByText('A linked meeting', { exact: true })).toBeVisible();
   for (const name of ['B foreign action', 'B linked meeting', 'Unrelated personal meeting']) await expect(page.getByText(name, { exact: true })).toHaveCount(0);

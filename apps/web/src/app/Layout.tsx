@@ -1,9 +1,6 @@
 import React, { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router';
 import {
-  CalendarDays,
-  CalendarCheck,
-  CalendarRange,
   ListTodo,
   Timer,
   Activity,
@@ -14,15 +11,13 @@ import {
   CloudOff,
   Undo2,
   Redo2,
-  GitBranch,
-  GanttChartSquare,
-  LayoutGrid,
   Menu,
   Check,
   BookOpen,
+  Trash2,
 } from 'lucide-react';
 import { cn } from '@cortex/ui';
-import { activeTasks, inboxTasks, isProject, sortSiblings } from '@cortex/core';
+import { activeTasks, inboxTasks, isProject, savedViewHref, sortSiblings } from '@cortex/core';
 import { useCortex, useCortexData } from '@cortex/crdt';
 import { useAuth } from './auth';
 import { useUI } from '../state/ui';
@@ -31,9 +26,14 @@ import { CommandPalette } from './CommandPalette';
 import { QuickCapture } from '../shared/QuickCapture';
 import { TaskSheet } from '../shared/TaskSheet';
 import { TaskMenu } from '../shared/TaskMenu';
+import { TaskDeletionDialog } from '../shared/TaskDeletionDialog';
 import { isComposing } from '../shared/ime';
 import { ProjectList } from './ProjectList';
+import { SidebarResize, useSidebarWidth } from './SidebarResize';
 import { ReviewReminder } from '../features/reviews/ReviewReminder';
+import { HabitReminder } from '../features/habits/HabitReminder';
+import { SavedViewsNav } from '../features/tasks/savedViews/SavedViewsNav';
+import { TASK_VIEWS } from '../features/tasks/viewOptions';
 const TmuxViewer = lazy(() =>
   import('../shared/TmuxViewer').then((module) => ({ default: module.TmuxViewer })),
 );
@@ -81,16 +81,8 @@ function RunningTimer() {
   );
 }
 const primary = [
-  { to: '/tasks?scope=today', label: '今天', icon: CalendarCheck },
-  { to: '/tasks?scope=week&view=gantt', label: '本周', icon: CalendarRange },
+  { to: '/tasks?scope=week', label: '当前任务', icon: ListTodo },
   { to: '/inbox', label: '收集箱', icon: Inbox },
-  { to: '/tasks', label: '全部任务', icon: ListTodo },
-];
-const views = [
-  { to: '/tasks?view=mindmap', label: '导图', icon: GitBranch },
-  { to: '/tasks?view=gantt', label: '甘特图', icon: GanttChartSquare },
-  { to: '/calendar', label: '日历', icon: CalendarDays },
-  { to: '/tasks?view=matrix', label: '四象限', icon: LayoutGrid },
 ];
 const tools = [
   { to: '/reviews', label: '复盘', icon: BookOpen },
@@ -104,6 +96,7 @@ export function Layout() {
   const store = useCortex();
   const location = useLocation();
   const [navigationOpen, setNavigationOpen] = useState(false);
+  const sidebar = useSidebarWidth();
   const setCommand = useUI((s) => s.setCommand);
   const setCapture = useUI((s) => s.setQuickCapture);
   const tmuxView = useUI((s) => s.tmuxView);
@@ -118,16 +111,12 @@ export function Layout() {
   );
   const params = new URLSearchParams(location.search);
   const active = (to: string) => {
-    const [path, query = ''] = to.split('?');
+    const [path, query] = to.split('?');
     if (location.pathname !== path) return false;
-    const target = new URLSearchParams(query);
     if (path !== '/tasks') return true;
-    if (target.has('scope')) return target.get('scope') === params.get('scope') && !params.has('project');
-    if (target.has('view')) {
-      const currentView = params.get('view') ?? (params.get('scope') === 'week' ? 'gantt' : 'list');
-      return target.get('view') === currentView;
-    }
-    return !params.has('scope') && !params.has('project');
+    const target = new URLSearchParams(query);
+    if (target.has('saved')) return params.get('saved') === target.get('saved');
+    return !params.has('project') && !data.settings.savedViews.some((view) => view.id === params.get('saved'));
   };
   useEffect(() => {
     setNavigationOpen(false);
@@ -136,6 +125,7 @@ export function Layout() {
     const onKey = (event: KeyboardEvent) => {
       if (isComposing(event)) return;
       const target = event.target as HTMLElement | null;
+      if (target?.closest('[data-destructive-dialog]')) return;
       const input = !!target?.closest('input,textarea,select,[contenteditable="true"],.xterm');
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
@@ -204,11 +194,13 @@ export function Layout() {
             />
           )}
           <aside
+            style={{ '--sidebar-width': `${sidebar.width}px` } as React.CSSProperties}
             className={cn(
               'workspace-sidebar flex-col px-3 py-5',
               navigationOpen ? 'fixed top-[env(safe-area-inset-top)] bottom-[env(safe-area-inset-bottom)] left-[env(safe-area-inset-left)] z-50 flex' : 'hidden md:flex',
             )}
           >
+            <SidebarResize width={sidebar.width} onChange={sidebar.setWidth} />
             <Link to="/" className="mb-6 flex shrink-0 items-center gap-2.5 px-3">
               <span className="grid h-7 w-7 place-items-center rounded-lg bg-[var(--accent-solid)] text-white">
                 <Check size={18} strokeWidth={2} />
@@ -226,17 +218,19 @@ export function Layout() {
               <nav aria-label="工作导航" className="space-y-0.5">
                 {nav(primary)}
               </nav>
-              <ProjectList projects={projects} selectedId={params.get('project')} />
-              <div className="workspace-section">视图</div>
-              <nav aria-label="视图" className="space-y-0.5">
-                {nav(views)}
-              </nav>
+              <SavedViewsNav key={store.userId} />
+              <ProjectList key={store.userId} projects={projects} selectedId={params.has('saved') ? null : params.get('project')} />
               <div className="workspace-section">工具</div>
               <nav aria-label="工具" className="space-y-0.5">
                 {nav(tools)}
               </nav>
             </div>
             <div className="shrink-0 border-t border-[var(--border)] pt-3">
+              <Link to="/trash" className="workspace-nav" aria-current={location.pathname === '/trash' ? 'page' : undefined}>
+                <Trash2 />
+                <span>回收站</span>
+                {data.tasks.some((task) => task.deletedAt != null) && <span className="ml-auto text-xs opacity-70">{data.tasks.filter((task) => task.deletedAt != null).length}</span>}
+              </Link>
               <Link to="/settings" className="workspace-nav">
                 <Settings />
                 <span>{user?.username ?? '设置与账号'}</span>
@@ -308,17 +302,17 @@ export function Layout() {
             aria-label="移动导航"
             className="flex shrink-0 justify-around border-t border-[var(--border)] bg-[var(--background)] md:hidden"
           >
-            {[primary[0], primary[3], views[2], primary[2]].map(({ to, label, icon: Icon }) => (
+            {[...primary, ...data.settings.savedViews.slice(0, 1).map((view) => ({ to: savedViewHref(view), label: view.name, icon: TASK_VIEWS.find((item) => item.key === view.view)!.icon }))].map(({ to, label, icon: Icon }) => (
               <Link
                 key={to}
                 to={to}
                 className={cn(
-                  'flex min-h-14 flex-col items-center justify-center gap-1 px-3 text-[10px]',
+                  'flex min-h-14 min-w-0 max-w-28 flex-col items-center justify-center gap-1 px-3 text-[10px]',
                   active(to) ? 'text-[var(--accent-solid)]' : 'text-muted',
                 )}
               >
                 <Icon size={18} strokeWidth={1.7} />
-                {label}
+                <span className="max-w-full truncate">{label}</span>
               </Link>
             ))}
             <button
@@ -335,6 +329,8 @@ export function Layout() {
       <CommandPalette />
       <TaskSheet />
       <TaskMenu />
+      <TaskDeletionDialog />
+      <HabitReminder key={store.userId} />
       {tmuxView && (
         <Suspense fallback={null}>
           <TmuxViewer />

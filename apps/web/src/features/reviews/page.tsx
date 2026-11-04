@@ -11,6 +11,7 @@ import {
 import { useUI } from '@/state/ui';
 import { useReviewDraft, type ReviewTextField } from './useReviewDraft';
 import { useReviewClock } from './ReviewReminder';
+import { ReviewTimeline } from './ReviewTimeline';
 
 const labelOf = (kind: ReviewKind) => kind === 'daily' ? '日报' : '周报';
 function periodLabel(period: ReviewPeriod) {
@@ -21,6 +22,9 @@ export default function ReviewsPage() {
   const data = useCortexData();
   const store = useCortex();
   const [params, setParams] = useSearchParams();
+  const timeline = params.get('view') === 'timeline';
+  const timelineParams = new URLSearchParams({ view: 'timeline' });
+  for (const key of ['type', 'q']) if (params.get(key)) timelineParams.set(key, params.get(key)!);
   const kind: ReviewKind = params.get('kind') === 'weekly' ? 'weekly' : 'daily';
   const now = useReviewClock();
   const date = params.get('date');
@@ -38,13 +42,16 @@ export default function ReviewsPage() {
             <h1 className="text-xl font-semibold tracking-tight">复盘</h1>
             <p className="mt-2 text-xs leading-5 text-muted">先理清计划，再回看进展、阻碍和下一步。</p>
           </div>
-          <Segmented value={kind} onValueChange={value => navigate(reviewPeriod(value as ReviewKind, dateFromDayKey(period.start), data.settings.weekStartsOn))}>
+          <Segmented value={timeline ? 'timeline' : kind} onValueChange={value => value === 'timeline' ? setParams(timelineParams) : navigate(reviewPeriod(value as ReviewKind, dateFromDayKey(period.start), data.settings.weekStartsOn))}>
             <SegmentedList aria-label="复盘类型">
               <SegmentedTrigger value="daily">日报</SegmentedTrigger>
               <SegmentedTrigger value="weekly">周报</SegmentedTrigger>
+              <SegmentedTrigger value="timeline">时间线</SegmentedTrigger>
             </SegmentedList>
           </Segmented>
         </header>
+        {timeline ? <ReviewTimeline key={store.userId} reviews={data.reviews} /> : <>
+        {params.get('from') === 'timeline' && <Link to={`/reviews?${timelineParams}`} className="mb-4 inline-flex items-center gap-1.5 text-xs text-muted hover:text-foreground"><ArrowLeft size={13} />返回时间线</Link>}
         <div className="mb-5 flex flex-wrap items-center gap-2">
           <button aria-label="上一期复盘" className="grid h-8 w-8 place-items-center rounded-md text-muted hover:bg-[var(--surface)]" onClick={() => navigate(reviewPeriod(kind, addDays(dateFromDayKey(period.start), kind === 'daily' ? -1 : -7), data.settings.weekStartsOn))}><ArrowLeft size={15} /></button>
           <input aria-label="复盘日期" type="date" max={dayKeyOf(now)} value={period.start} onChange={event => { if (validDayKey(event.target.value)) navigate(reviewPeriod(kind, dateFromDayKey(event.target.value), data.settings.weekStartsOn)); }} className="h-8 min-w-0 rounded-md border border-[var(--border)] bg-transparent px-2 text-xs outline-none focus:border-[var(--accent-solid)]" />
@@ -53,6 +60,7 @@ export default function ReviewsPage() {
           <span className="ml-auto text-xs text-muted">{kind === 'daily' ? '约 3 分钟' : '约 10 分钟'}</span>
         </div>
         {future ? <p className="py-10 text-sm text-muted">这一天还没到，先回顾已经走过的路。</p> : <ReviewEditor key={`${store.userId}:${reviewId(period)}`} period={period} now={now} />}
+        </>}
       </div>
     </div>
   );
@@ -68,10 +76,11 @@ function ReviewEditor({ period, now }: { period: ReviewPeriod; now: number }) {
   const liveFacts = useMemo(() => reviewFacts(data, period, now), [data.tasks, data.sessions, period.kind, period.start, period.end, now]);
   const facts = completed && draft.review?.facts ? draft.review.facts : liveFacts;
   const weekly = period.kind === 'weekly';
-  const questions: { field: ReviewTextField; title: string; prompt: string }[] = [
-    { field: 'highlights', title: weekly ? '本周真正推进了什么？' : '今天需要推进什么／真正推进了什么？', prompt: weekly ? '哪些成果最有价值？哪件事比上周更进一步？' : '先写今天最想推进的 1–3 件事，之后再补充实际进展和收获。' },
-    { field: 'friction', title: '哪里卡住了，为什么？', prompt: '是依赖、目标不清，还是投入方式？下次可以怎样调整？' },
-    { field: 'nextSteps', title: weekly ? '下周最重要的是什么？' : '明天最重要的一步是什么？', prompt: '写下 1–3 个具体行动，让下一次开始更轻松。' },
+  const questions: { field: ReviewTextField; number?: string; title: string; prompt: string }[] = [
+    { field: 'highlights', number: '01', title: weekly ? '本周真正推进了什么？' : '今天需要推进什么／真正推进了什么？', prompt: weekly ? '哪些成果最有价值？哪件事比上周更进一步？' : '先写今天最想推进的 1–3 件事，之后再补充实际进展和收获。' },
+    { field: 'friction', number: '02', title: '哪里卡住了，为什么？', prompt: '是依赖、目标不清，还是投入方式？写下具体的阻碍和原因。' },
+    { field: 'resolution', title: '如何解决？', prompt: '针对上面的阻碍，可以采取什么办法？需要谁的帮助，准备怎样验证？' },
+    { field: 'nextSteps', number: '03', title: weekly ? '下周最重要的是什么？' : '明天最重要的一步是什么？', prompt: '写下 1–3 个具体行动，让下一次开始更轻松。' },
   ];
   const hasText = questions.some(question => draft.value(question.field).trim());
   const finish = async () => {
@@ -110,9 +119,9 @@ function ReviewEditor({ period, now }: { period: ReviewPeriod; now: number }) {
           <p className="mt-3 text-xs text-muted lg:hidden">完成 {facts.completed.length} 项任务<span className="mx-2">·</span>专注 {fmtDuration(facts.focusMin)}</p>
         </div>
         <div className="space-y-8 px-5 py-6 sm:px-7">
-          {questions.map((question, index) => (
-            <label key={question.field} className="block">
-              <span className="mb-3 flex items-center gap-2.5 text-sm font-medium"><span className="text-[11px] font-normal tabular-nums text-muted">0{index + 1}</span>{question.title}</span>
+          {questions.map(question => (
+            <label key={question.field} className={cn('block', !question.number && 'pl-6')}>
+              <span className="mb-3 flex items-center gap-2.5 text-sm font-medium">{question.number && <span className="text-[11px] font-normal tabular-nums text-muted">{question.number}</span>}{question.title}</span>
               <textarea
                 aria-label={question.title}
                 value={draft.value(question.field)}
@@ -157,7 +166,7 @@ function ReviewEditor({ period, now }: { period: ReviewPeriod; now: number }) {
         </section>
         {weekly && <section aria-label="本周日报" className="px-1">
           <h2 className="text-xs font-medium">这一周的日报 <span className="ml-1 text-muted">{dailyEntries.filter(review => review.completedAt != null).length} 篇已复盘</span></h2>
-          {dailyEntries.length ? <div className="mt-3 space-y-2">{dailyEntries.map(review => <Link key={review.id} to={`/reviews?kind=daily&date=${review.periodStart}`} className="block rounded-md px-2 py-2 hover:bg-[var(--surface)]"><span className="flex justify-between text-xs"><span>{review.periodStart}</span><span className="text-muted">{review.completedAt != null ? '已复盘' : '草稿'}</span></span><span className="mt-1 block truncate text-xs text-muted">{review.highlights || review.friction || review.nextSteps}</span></Link>)}</div> : <p className="mt-3 text-xs leading-5 text-muted">写下的日报会汇集在这里，帮你回想这一周。</p>}
+          {dailyEntries.length ? <div className="mt-3 space-y-2">{dailyEntries.map(review => <Link key={review.id} to={`/reviews?kind=daily&date=${review.periodStart}`} className="block rounded-md px-2 py-2 hover:bg-[var(--surface)]"><span className="flex justify-between text-xs"><span>{review.periodStart}</span><span className="text-muted">{review.completedAt != null ? '已复盘' : '草稿'}</span></span><span className="mt-1 block truncate text-xs text-muted">{review.highlights || review.friction || review.resolution || review.nextSteps}</span></Link>)}</div> : <p className="mt-3 text-xs leading-5 text-muted">写下的日报会汇集在这里，帮你回想这一周。</p>}
         </section>}
         <ReviewHistory reviews={data.reviews} selectedId={reviewId(period)} />
         <ReminderSettings settings={data.settings} />
@@ -176,9 +185,10 @@ function FactList({ title, tasks, empty }: { title: string; tasks: ReviewTaskFac
 
 function ReviewHistory({ reviews, selectedId }: { reviews: Review[]; selectedId: string }) {
   const [search, setSearch] = useState('');
-  const sorted = [...reviews].filter(review => `${review.periodStart} ${review.highlights} ${review.friction} ${review.nextSteps}`.toLowerCase().includes(search.toLowerCase())).sort((a, b) => b.periodStart.localeCompare(a.periodStart) || a.kind.localeCompare(b.kind));
+  const sorted = [...reviews].filter(review => `${review.periodStart} ${review.highlights} ${review.friction} ${review.resolution} ${review.nextSteps}`.toLowerCase().includes(search.toLowerCase())).sort((a, b) => b.periodStart.localeCompare(a.periodStart) || a.kind.localeCompare(b.kind));
   return <section aria-label="复盘历史" className="px-1">
     <h2 className="flex items-center gap-2 text-xs font-medium"><BookOpen size={13} />复盘记录<span className="font-normal text-muted">{reviews.length}</span></h2>
+    <Link to="/reviews?view=timeline" className="mt-2 inline-flex items-center gap-1 text-xs text-[var(--accent-solid)]">查看全部时间线<ArrowRight size={12} /></Link>
     {reviews.length > 6 && <input aria-label="搜索复盘" value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索日期或内容" className="mt-3 h-8 w-full rounded-md border border-[var(--border)] bg-transparent px-2 text-xs outline-none focus:border-[var(--accent-solid)]" />}
     <nav aria-label="历史复盘" className="mt-3 max-h-64 space-y-1 overflow-y-auto">{sorted.map(review => <Link key={review.id} aria-current={review.id === selectedId ? 'page' : undefined} to={`/reviews?kind=${review.kind}&date=${review.periodStart}`} className={cn('flex items-center gap-2 rounded-md px-2 py-2 text-xs', review.id === selectedId ? 'bg-[var(--surface)]' : 'text-muted hover:bg-[var(--surface)] hover:text-foreground')}>
       <span>{review.periodStart}</span><span>{labelOf(review.kind)}</span><span className="ml-auto text-[10px]">{review.completedAt != null ? '已复盘' : '草稿'}</span>

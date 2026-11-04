@@ -1,10 +1,14 @@
 import type { CortexData } from './types';
 import { reviewId, validReviewPeriod } from './reviews';
+import { MIND_APPEARANCE_FIELDS, validateMindAppearance } from './mindAppearance';
+import { validateSavedViews } from './savedViews';
+import { validateHabitConfig } from './habitConfig';
+import { validateHabitOrder } from './habitOrder';
 
 const collections = ['tasks', 'events', 'links', 'sessions', 'habits', 'habitLogs', 'tags', 'reviews'] as const;
 const numeric = new Set(['order', 'createdAt', 'updatedAt', 'startAt', 'dueAt', 'completedAt', 'deletedAt', 'archivedAt', 'estimateMin', 'start', 'end', 'startedAt', 'endedAt', 'plannedMin', 'actualMin', 'distractions', 'count', 'targetPerDay']);
-const strings = new Set(['id', 'title', 'notes', 'ownerId', 'name', 'date', 'taskId', 'parentId', 'target', 'serverId', 'session', 'icon', 'color', 'reminderAt', 'linkedTaskTemplateId', 'habitId', 'periodStart', 'periodEnd', 'highlights', 'friction', 'nextSteps']);
-const nullable = new Set(['parentId', 'taskId', 'linkedTaskTemplateId', 'startAt', 'dueAt', 'completedAt', 'deletedAt', 'archivedAt', 'priority', 'kind', 'facts']);
+const strings = new Set(['id', 'title', 'notes', 'ownerId', 'name', 'date', 'taskId', 'parentId', 'target', 'serverId', 'session', 'icon', 'color', 'reminderAt', 'linkedTaskTemplateId', 'habitId', 'periodStart', 'periodEnd', 'highlights', 'friction', 'resolution', 'nextSteps', 'deleteBatchId']);
+const nullable = new Set<string>(['parentId', 'taskId', 'linkedTaskTemplateId', 'startAt', 'dueAt', 'completedAt', 'deletedAt', 'archivedAt', 'priority', 'kind', 'facts', 'deleteBatchId', ...MIND_APPEARANCE_FIELDS]);
 const nonnegative = new Set(['estimateMin', 'plannedMin', 'actualMin', 'distractions', 'count', 'targetPerDay']);
 const enums: Record<string, readonly string[]> = {
   status: ['inbox', 'todo', 'doing', 'done', 'archived'], priority: ['P0', 'P1', 'P2', 'P3'],
@@ -36,6 +40,7 @@ export function validateCortexData(value: unknown): Partial<CortexData> {
         if (field === 'tags' || field === 'cancelledUnits') check(stringsOnly(fieldValue), `${name}.${field}`);
       }
       if (name === 'tasks') {
+        validateMindAppearance(row);
         check(row.tags === undefined || stringsOnly(row.tags), 'task.tags');
         check(row.kind == null || row.kind === 'todo' || row.kind === 'node', 'task.kind');
       }
@@ -45,6 +50,8 @@ export function validateCortexData(value: unknown): Partial<CortexData> {
         const period = { kind: row.kind, start: row.periodStart, end: row.periodEnd } as import('./types').ReviewPeriod;
         check(validReviewPeriod(period) && row.id === reviewId(period), 'review.period');
         for (const field of ['highlights', 'friction', 'nextSteps']) check(typeof row[field] === 'string' && String(row[field]).length <= 100000, `review.${field}`);
+        // Older backups predate the separate solution field.
+        check(row.resolution === undefined || typeof row.resolution === 'string' && row.resolution.length <= 100000, 'review.resolution');
         if (row.facts != null) {
           const facts = row.facts;
           check(record(facts) && typeof facts.capturedAt === 'number' && Number.isFinite(facts.capturedAt)
@@ -56,6 +63,7 @@ export function validateCortexData(value: unknown): Partial<CortexData> {
       }
       if (name === 'habitLogs') check(typeof row.count === 'number' && Number.isInteger(row.count) && row.count >= 0 && row.count <= 10000, 'habitLog.count');
       if (name === 'habits') {
+        validateHabitConfig(row);
         check(record(row.cadence), 'habit.cadence');
         const c = row.cadence;
         check(['daily', 'weekly', 'interval', 'custom'].includes(String(c.type)), 'cadence.type');
@@ -69,6 +77,9 @@ export function validateCortexData(value: unknown): Partial<CortexData> {
   if (value.settings !== undefined) {
     check(record(value.settings), 'settings');
     const settings = value.settings;
+    if (settings.savedViews !== undefined) validateSavedViews(settings.savedViews);
+    if (settings.habitOrder !== undefined) validateHabitOrder(settings.habitOrder);
+    if (settings.habitSort !== undefined) check(settings.habitSort === 'time' || settings.habitSort === 'manual', 'settings.habitSort');
     if (settings.hiddenRoots !== undefined) check(stringsOnly(settings.hiddenRoots), 'settings.hiddenRoots');
     if (settings.servers !== undefined) {
       check(Array.isArray(settings.servers) && settings.servers.every((server) => record(server) && typeof server.id === 'string' && typeof server.host === 'string' && typeof server.name === 'string'), 'settings.servers');

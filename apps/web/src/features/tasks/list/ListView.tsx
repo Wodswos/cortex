@@ -34,8 +34,7 @@ import {
   addDays,
   PRIORITY_ORDER,
   isStructural,
-  startOfDay,
-  startOfWeek,
+  isProject,
   matchFilter,
   descendantsOf,
   priorityOf,
@@ -55,12 +54,12 @@ import {
 import { TaskInspector } from '@/shared/TaskInspector';
 import { isComposing } from '@/shared/ime';
 import { projectTaskDrop, TASK_INDENT, type TaskDrop } from './drop';
+import { useTaskWindow } from '../TaskWindowControls';
+import { tasksInWindow, windowDueAt } from '../taskWindow';
 
 /** 过滤 chips */
 const FILTERS: { key: TaskFilter['kind']; label: string }[] = [
   { key: 'all', label: '全部' },
-  { key: 'today', label: '今天' },
-  { key: 'next7', label: '未来 7 天' },
   { key: 'high', label: '高优先级' },
   { key: 'unscheduled', label: '无日期' },
 ];
@@ -105,6 +104,8 @@ export function ListView() {
 
   const [params] = useSearchParams();
   const scope = params.get('scope');
+  const { range } = useTaskWindow();
+  const { start: rangeStart, days: rangeDays, scope: rangeScope } = range;
   const projectId = params.get('project');
   const [newTitle, setNewTitle] = useState('');
   const [saveStatus, setSaveStatus] = useState('');
@@ -121,7 +122,7 @@ export function ListView() {
   useEffect(() => {
     ui.setFilter({ kind: 'all' });
     setSelectedIds([]);
-  }, [scope, projectId]);
+  }, [scope, projectId, rangeStart, rangeDays]);
   const filter = ui.filter;
   const showDone = (data.settings.completedDisplay ?? 'inline-gray') !== 'hidden';
   const active = useMemo(() => activeTasks(data.tasks).filter((t) => t.status !== 'inbox'), [data.tasks]);
@@ -133,23 +134,11 @@ export function ListView() {
   );
   const visibleTasks = useMemo(() => {
     const projectIds = projectId ? descendantsOf(projectId, allChildren).add(projectId) : null;
-    const pool = active.filter((task) => !projectIds || projectIds.has(task.id));
-    if (!scope && filter.kind === 'all') return pool;
+    const pool = tasksInWindow(active.filter((task) => !projectIds || projectIds.has(task.id)), { scope: rangeScope, start: rangeStart, days: rangeDays });
+    if (filter.kind === 'all') return pool;
     const byId = new Map(pool.map((task) => [task.id, task]));
     const keep = new Set<string>();
-    const start =
-      scope === 'week' ? startOfWeek(now, data.settings.weekStartsOn).getTime() : startOfDay(now).getTime();
-    const end = scope === 'week' ? addDays(start, 7).getTime() : endOfDay(now).getTime();
     for (const task of pool) {
-      if (
-        scope &&
-        (isStructural(task) ||
-          task.status === 'done' ||
-          task.dueAt == null ||
-          task.dueAt < start ||
-          task.dueAt >= end)
-      )
-        continue;
       if (!matchFilter(task, filter, now)) continue;
       let current: Task | undefined = task;
       while (current && !keep.has(current.id)) {
@@ -158,7 +147,7 @@ export function ListView() {
       }
     }
     return pool.filter((task) => keep.has(task.id));
-  }, [active, allChildren, projectId, scope, filter, now, data.settings.weekStartsOn]);
+  }, [active, allChildren, projectId, rangeScope, rangeStart, rangeDays, filter, now]);
   const childrenMap = useMemo(() => buildChildrenMap(visibleTasks), [visibleTasks]);
   const progressMap = useMemo(() => workProgress(active), [active]);
   // 隐藏模式:整棵子树都完成的行不再渲染(根级过滤在 groupRoots,子级在这里)
@@ -327,17 +316,14 @@ export function ListView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** 软删一颗子树:自身 + 所有后代,一并收集并删除 */
-  const softDeleteSubtree = (rootId: string) => {
-    const ids = new Set<string>();
-    const stack = [rootId];
-    while (stack.length) {
-      const cur = stack.pop()!;
-      if (ids.has(cur)) continue;
-      ids.add(cur);
-      for (const c of childrenMap.get(cur) ?? []) stack.push(c.id);
+  const deleteSelection = () => {
+    const targets = store.getData().tasks.filter((task) => selectedIds.includes(task.id) && task.deletedAt == null);
+    if (targets.some(isProject)) {
+      useUI.getState().requestTaskDeletion(store.userId, targets.map((task) => task.id));
+      return;
     }
-    for (const id of ids) store.softDeleteTask(id);
+    store.softDeleteTasks(targets.map((task) => task.id));
+    clearSelection();
   };
 
   // Esc 取消「挂到…」拾取模式
@@ -355,11 +341,10 @@ export function ListView() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Backspace' && e.key !== 'Delete') return;
       const t = e.target as HTMLElement | null;
-      if (t?.closest('input, textarea, select') || t?.isContentEditable) return;
+      if (e.isComposing || t?.closest('input, textarea, select, [role="dialog"]') || t?.isContentEditable) return;
       if (selectedIds.length === 0) return;
       e.preventDefault();
-      selectedIds.forEach((id) => softDeleteSubtree(id));
-      clearSelection();
+      deleteSelection();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -379,6 +364,7 @@ export function ListView() {
     const created = store.createTask({
       title: '',
       status: 'todo',
+      dueAt: windowDueAt(range),
       parentId,
       order: newOrder(kids.at(-1)?.order),
     });
@@ -458,7 +444,7 @@ export function ListView() {
       status: 'todo',
       parentId: projectId,
       order: newOrder(siblings.at(-1)?.order),
-      ...(scope ? { dueAt: endOfDay(now).getTime() - 60000 } : {}),
+      dueAt: windowDueAt(range),
     });
     setNewTitle('');
     captureRef.current?.focus();
@@ -589,6 +575,7 @@ export function ListView() {
                   </div>
                   {g.rows.map((row) => (
                     <TaskRow
+                      newTaskDueAt={windowDueAt(range)}
                       key={row.task.id}
                       task={row.task}
                       progress={progressMap.get(row.task.id)}
@@ -675,8 +662,7 @@ export function ListView() {
               <button
                 onClick={() => {
                   // 每个所选:整棵子树一并删除;与其它所选重叠时 softDelete 对其已是幂等,无害
-                  selectedIds.forEach((id) => softDeleteSubtree(id));
-                  clearSelection();
+                  deleteSelection();
                 }}
                 className="rounded-full px-3 py-1 text-[var(--danger)] hover:bg-[var(--danger)]/10"
               >
@@ -698,6 +684,7 @@ function ListIcon() {
 }
 
 function TaskRow({
+  newTaskDueAt,
   task,
   progress,
   depth,
@@ -712,6 +699,7 @@ function TaskRow({
   onCreated,
   onConsumed,
 }: {
+  newTaskDueAt?: number;
   task: Task;
   progress?: { done: number; total: number };
   depth: number;
@@ -786,6 +774,7 @@ function TaskRow({
       const created = store.createTask({
         title: '',
         status: 'todo',
+        dueAt: newTaskDueAt,
         parentId: task.parentId,
         order: newOrder(task.order, siblings[idx + 1]?.order),
       });
@@ -824,7 +813,8 @@ function TaskRow({
     } else if (e.key === 'Backspace') {
       e.preventDefault();
       if (selected) return; // 该行已选中 → 交父级整批删除
-      store.softDeleteTask(task.id);
+      if (isProject(task)) ui.requestTaskDeletion(store.userId, [task.id]);
+      else store.softDeleteTask(task.id);
     }
   };
 

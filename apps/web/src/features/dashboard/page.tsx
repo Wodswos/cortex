@@ -86,7 +86,7 @@ export default function DashboardPage() {
               </button>
             </div>
             {todayTasks.length === 0 ? (
-              <EmptyState icon={<Activity className="h-6 w-6" />} title="今天没有安排" sub="用 ⌘K 打开命令面板,或去时间线排一天" />
+              <EmptyState icon={<Activity className="h-6 w-6" />} title="今天没有安排" sub="用 ⌘K 打开命令面板,或去日历排一天" />
             ) : (
               <div className="space-y-0.5">
                 {todayTasks.slice(0, 8).map((t) => (
@@ -109,11 +109,11 @@ export default function DashboardPage() {
                   <CalendarClock className="h-4 w-4 text-[var(--accent-to)]" /> 接下来
                 </h2>
                 <button className="flex items-center text-xs text-muted hover:text-foreground" onClick={() => navigate('/tasks?view=timeline')}>
-                  时间线 <ChevronRight className="h-3 w-3" />
+                  日历 <ChevronRight className="h-3 w-3" />
                 </button>
               </div>
               {nextEvents.length === 0 ? (
-                <div className="py-4 text-center text-xs text-muted/60">今天没有日程,拖任务进时间线安排</div>
+                <div className="py-4 text-center text-xs text-muted/60">今天没有日程,拖任务进日历安排</div>
               ) : (
                 <div className="space-y-1.5">
                   {nextEvents.map((e) => {

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router';
 import { Command } from 'cmdk';
 import {
   ListTodo, Timer, Activity, Inbox, LayoutDashboard, Settings, Plus, Play,
-  CalendarRange, LayoutGrid, GitBranch, Download, Search, Library, BookOpen,
+  CalendarRange, LayoutGrid, GitBranch, Download, Search, Library, BookOpen, Trash2,
 } from 'lucide-react';
 import { useCortex, useCortexData } from '@cortex/crdt';
 import { activeTasks } from '@cortex/core';
@@ -72,14 +72,17 @@ export function CommandPalette() {
             <Item onSelect={go(() => navigate('/'))} icon={<LayoutDashboard className="h-4 w-4" />}>
               概览
             </Item>
-            <Item onSelect={go(() => navigate('/tasks'))} icon={<ListTodo className="h-4 w-4" />}>
-              任务 · 列表
+            <Item onSelect={go(() => navigate('/tasks?scope=week&view=list'))} icon={<ListTodo className="h-4 w-4" />}>
+              当前任务 · 列表
             </Item>
-            <Item onSelect={go(() => navigate('/tasks?view=matrix'))} icon={<LayoutGrid className="h-4 w-4" />}>
-              任务 · 四象限
+            <Item onSelect={go(() => navigate('/tasks?scope=week&view=matrix'))} icon={<LayoutGrid className="h-4 w-4" />}>
+              当前任务 · 四象限
             </Item>
-            <Item onSelect={go(() => navigate('/tasks?view=mindmap'))} icon={<GitBranch className="h-4 w-4" />}>
-              任务 · 导图
+            <Item onSelect={go(() => navigate('/tasks?scope=week&view=mindmap'))} icon={<GitBranch className="h-4 w-4" />}>
+              当前任务 · 导图
+            </Item>
+            <Item onSelect={go(() => navigate('/tasks?scope=month&view=timeline'))} icon={<CalendarRange className="h-4 w-4" />}>
+              当前任务 · 本月日历
             </Item>
             <Item onSelect={go(() => navigate('/inbox'))} icon={<Inbox className="h-4 w-4" />}>
               收集箱
@@ -92,6 +95,9 @@ export function CommandPalette() {
             </Item>
             <Item onSelect={go(() => navigate('/reviews'))} icon={<BookOpen className="h-4 w-4" />}>
               复盘 · 日报与周报
+            </Item>
+            <Item onSelect={go(() => navigate('/trash'))} icon={<Trash2 className="h-4 w-4" />}>
+              回收站 · 查看与恢复已删除内容
             </Item>
             <Item
               onSelect={go(() => {

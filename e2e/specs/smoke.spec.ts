@@ -109,7 +109,7 @@ test('Chinese IME confirms text before submitting list and quick capture tasks',
   await expect(page.locator('[data-row]')).toHaveCount(0);
   await input.press('Enter');
   await expect(page.locator('[data-row]').getByText('你好，创建中文任务', { exact: true })).toBeVisible();
-  await expect(page.getByRole('status', { name: '保存状态' })).toHaveText('已保存');
+  await expect(page.getByRole('status', { name: '保存状态', exact: true })).toHaveText('已保存');
   await input.blur();
   await page.keyboard.press('n');
   const quick = page.getByPlaceholder(/想到什么写什么/);
@@ -150,7 +150,7 @@ test('calendar drafts cancel without records and create only after confirmation'
   const draft = page.getByRole('dialog', { name: '新建日历任务' });
   await expect(draft).toBeVisible();
   await draft.getByLabel('新任务标题', { exact: true }).fill('discard this draft');
-  await page.getByRole('heading', { name: '日历', exact: true }).click();
+  await page.getByRole('heading', { name: '当前任务', exact: true }).click();
   await expect(draft).toHaveCount(0);
   await cell.click({ position: { x: 20, y: 65 } });
   await page.keyboard.press('Escape');
@@ -225,7 +225,7 @@ test('task resources have three stacked areas and distinguish connection failure
 test('week and day blank slots open cancellable task drafts, including on mobile', async ({ page }) => {
   await page.goto('/calendar');
   await ready(page);
-  await page.getByRole('tab', { name: '周', exact: true }).click();
+  await page.getByRole('combobox', { name: '任务时间范围', exact: true }).selectOption('week');
   const slot = page.locator('[data-calendar-week-date]').first();
   const bounds = await slot.boundingBox();
   expect(bounds).not.toBeNull();
@@ -234,7 +234,7 @@ test('week and day blank slots open cancellable task drafts, including on mobile
   await expect(draft).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(draft).toHaveCount(0);
-  await page.getByRole('tab', { name: '日', exact: true }).click();
+  await page.getByRole('combobox', { name: '任务时间范围', exact: true }).selectOption('today');
   const day = page.getByTestId('day-scroll');
   const dayBounds = await day.boundingBox();
   await page.mouse.click(dayBounds!.x + 160, dayBounds!.y + 140);
@@ -251,11 +251,11 @@ test('week and day blank slots open cancellable task drafts, including on mobile
   expect(draftBounds!.x).toBeGreaterThanOrEqual(0);
   expect(draftBounds!.x + draftBounds!.width).toBeLessThanOrEqual(390);
   await draft.getByLabel('新任务标题', { exact: true }).fill('mobile cancelled draft');
-  await page.getByRole('heading', { name: '日历', exact: true }).click();
+  await page.getByRole('heading', { name: '当前任务', exact: true }).click();
   await expect(draft).toHaveCount(0);
 });
 
-test('accent choices preserve circular controls and views are separated from tools', async ({ page }) => {
+test('accent choices preserve circular controls and navigation only contains workspaces and tools', async ({ page }) => {
   await page.goto('/settings');
   await ready(page);
   const palette = page.getByRole('group', { name: '强调色' });
@@ -267,9 +267,10 @@ test('accent choices preserve circular controls and views are separated from too
       await color.evaluate((element) => parseFloat(getComputedStyle(element).borderRadius)),
     ).toBeGreaterThanOrEqual(16);
   }
-  const views = page.getByRole('navigation', { name: '视图', exact: true });
-  for (const name of ['导图', '甘特图', '日历', '四象限'])
-    await expect(views.getByRole('link', { name, exact: true })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: '视图', exact: true })).toHaveCount(0);
+  const workspaces = page.getByRole('navigation', { name: '工作导航', exact: true });
+  await expect(workspaces.getByRole('link')).toHaveText(['当前任务', '收集箱']);
+  await expect(page.getByRole('navigation', { name: '快捷视图', exact: true }).getByRole('link', { name: '本月日历', exact: true })).toBeVisible();
   await expect(
     page
       .getByRole('navigation', { name: '工具', exact: true })
@@ -307,7 +308,7 @@ test('first offline reload retains account and unvisited lazy views', async ({ c
   await expect(page.getByText('offline account task', { exact: true }).first()).toBeVisible();
   await page.goto('/tasks?view=mindmap');
   await expect(page.locator('.react-flow')).toBeVisible();
-  await page.goto('/tasks?view=timeline');
+  await page.goto('/tasks?view=timeline&scope=today');
   await expect(page.getByTestId('day-scroll')).toBeVisible();
 });
 
@@ -402,7 +403,7 @@ test('clicking a cross-midnight event preserves the complete interval', async ({
       },
     ],
   });
-  await page.goto('/tasks?view=timeline');
+  await page.goto('/tasks?view=timeline&scope=today');
   await page.getByTestId('day-scroll').evaluate((node) => {
     node.scrollTop = 0;
   });
@@ -492,6 +493,7 @@ test('project drag order persists, keeps hierarchy and supports keyboard sorting
   await nav.locator('[data-project-row="project_a"]').hover();
   const from = await grip.boundingBox(),
     to = await nav.locator('[data-project-row="project_c"]').boundingBox();
+  expect(from!.x + from!.width).toBeLessThan((await nav.getByRole('link', { name: 'Project A', exact: true }).boundingBox())!.x + 1);
   await page.mouse.move(from!.x + from!.width / 2, from!.y + from!.height / 2);
   await page.mouse.down();
   await page.mouse.move(from!.x + from!.width / 2, from!.y + from!.height / 2 + 8, { steps: 3 });
@@ -506,7 +508,7 @@ test('project drag order persists, keeps hierarchy and supports keyboard sorting
   await page.keyboard.press('Space');
   await expect(grip).toHaveAttribute('aria-pressed', 'true');
   // dnd-kit attaches keyboard listeners on the next browser task after activation.
-  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+  await page.evaluate(() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
   await page.keyboard.press('ArrowUp');
   await expect(
     page.getByRole('status').filter({ hasText: '项目 Project A 移到 Project C 位置' }),
@@ -525,15 +527,15 @@ test('project drag order persists, keeps hierarchy and supports keyboard sorting
     expect(data.data.tasks.find((value: any) => value.id === id).parentId).toBeNull();
 });
 
-test('week defaults to this week in Gantt while explicit views and matrix navigation remain available', async ({ page }) => {
+test('current tasks defaults to this week in Gantt and offers every view in the workspace', async ({ page }) => {
   await page.goto('/tasks?scope=week');
   await ready(page);
   await expect(page.getByRole('tab', { name: '甘特图', exact: true })).toHaveAttribute('data-state', 'active');
-  const weekLink = page.getByRole('navigation', { name: '工作导航' }).getByRole('link', { name: '本周', exact: true });
+  const weekLink = page.getByRole('navigation', { name: '工作导航' }).getByRole('link', { name: '当前任务', exact: true });
   await expect(weekLink).toHaveAttribute('aria-current', 'page');
   const dates = page.locator('input[type="date"]');
   const thisWeek = await dates.first().inputValue();
-  await page.getByRole('button', { name: '下周', exact: true }).click();
+  await page.getByRole('button', { name: '下一个时间段', exact: true }).click();
   await expect(dates.first()).not.toHaveValue(thisWeek);
   await weekLink.click();
   await expect(dates.first()).toHaveValue(thisWeek);
@@ -544,11 +546,11 @@ test('week defaults to this week in Gantt while explicit views and matrix naviga
   await expect(page.getByRole('tab', { name: '列表', exact: true })).toHaveAttribute('data-state', 'active');
   await weekLink.click();
   await expect(page.getByRole('tab', { name: '甘特图', exact: true })).toHaveAttribute('data-state', 'active');
-  const matrix = page.getByRole('navigation', { name: '视图', exact: true }).getByRole('link', { name: '四象限', exact: true });
+  const matrix = page.getByRole('tab', { name: '四象限', exact: true });
   await matrix.click();
   await expect(page).toHaveURL(/view=matrix/);
   await expect(page.getByRole('tab', { name: '四象限', exact: true })).toHaveAttribute('data-state', 'active');
-  await expect(matrix).toHaveAttribute('aria-current', 'page');
+  await expect(weekLink).toHaveAttribute('aria-current', 'page');
 });
 
 const listRow = (page: Page, id: string) => page.locator(`[data-row][data-task-id="${id}"]`);
@@ -658,7 +660,7 @@ test('list drag appends after filtered children and supports a touch handle', as
     { ...task('filter_source', 'Drag filtered source'), parentId: null, dueAt: due, order: 1 },
   ] });
   await page.goto('/tasks');
-  await page.getByLabel('筛选任务', { exact: true }).selectOption('today');
+  await page.getByRole('combobox', { name: '任务时间范围', exact: true }).selectOption('today');
   await expect(listRow(page, 'filter_hidden')).toHaveCount(0);
   if (browserName === 'chromium') {
     await page.setViewportSize({ width: 390, height: 844 });
@@ -679,7 +681,7 @@ test('list drag appends after filtered children and supports a touch handle', as
     await page.mouse.move(target.x + 150, target.y + target.height / 2, { steps: 10 });
     await page.mouse.up();
   }
-  await page.getByLabel('筛选任务', { exact: true }).selectOption('all');
+  await page.getByRole('combobox', { name: '任务时间范围', exact: true }).selectOption('all');
   await expect(listRow(page, 'filter_hidden')).toBeVisible();
   const result = await exported(page);
   const source = result.data.tasks.find((item: any) => item.id === 'filter_source');
@@ -775,24 +777,26 @@ test('mindmap focuses current work and factual risks while retaining project pat
   for (const id of ['focus_project', 'focus_section', 'focus_doing', 'focus_week'])
     await expect(node(id)).toBeVisible();
   for (const id of ['focus_done', 'focus_future', 'focus_overdue', 'focus_important'])
-    await expect(node(id)).toHaveCount(0);
-  await expect(node('focus_project').getByText('1/6', { exact: true })).toBeVisible();
+    await expect(node(id).locator('[data-mind-muted]')).toHaveAttribute('data-mind-muted', 'true');
+  await expect(node('focus_project').getByText('1/6 完成', { exact: true })).toBeVisible();
   await overview.getByRole('button', { name: '逾期 1', exact: true }).click();
   await expect(node('focus_overdue')).toBeVisible();
   await expect(node('focus_project')).toBeVisible();
-  await expect(node('focus_doing')).toHaveCount(0);
+  await expect(node('focus_doing').locator('[data-mind-muted]')).toHaveAttribute('data-mind-muted', 'true');
   await overview.getByRole('button', { name: '重要未排期 1', exact: true }).click();
   await expect(node('focus_important')).toBeVisible();
-  await expect(node('focus_overdue')).toHaveCount(0);
+  await expect(node('focus_overdue').locator('[data-mind-muted]')).toHaveAttribute('data-mind-muted', 'true');
   await overview.getByRole('button', { name: '全图', exact: true }).click();
   for (const id of ['focus_done', 'focus_future', 'focus_overdue', 'focus_important'])
     await expect(node(id)).toBeVisible();
   const help = page.locator('details[aria-label="导图操作说明"]');
   await expect(help).not.toHaveAttribute('open', '');
   await help.locator('summary').click();
-  await expect(help.locator('li')).toHaveCount(6);
-  await help.getByRole('button', { name: '折线', exact: true }).click();
+  await expect(help.getByRole('heading')).toHaveText(['浏览画布', '选择与查看', '创建与编辑', '调整结构']);
   await help.locator('summary').click();
+  await page.getByRole('button', { name: '导图配置', exact: true }).click();
+  await page.getByRole('dialog', { name: '导图配置', exact: true }).getByRole('button', { name: '折线', exact: true }).click();
+  await page.getByRole('button', { name: '关闭导图配置', exact: true }).click();
   await expect(help).not.toHaveAttribute('open', '');
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -843,9 +847,10 @@ test('mindmap edges meet node boundaries and stay level through filtered project
       const matrix = path.getScreenCTM()!;
       const start = path.getPointAtLength(0).matrixTransform(matrix);
       const end = path.getPointAtLength(path.getTotalLength()).matrixTransform(matrix);
-      close(`${sourceId} edge start x`, start.x, source.right);
+      const left = document.querySelector(`[data-id="${targetId}"] [data-mind-side="left"]`) !== null;
+      close(`${sourceId} edge start x`, start.x, left ? source.left : source.right);
       close(`${sourceId} edge start y`, start.y, source.y + source.height / 2);
-      close(`${targetId} edge end x`, end.x, target.left);
+      close(`${targetId} edge end x`, end.x, left ? target.right : target.left);
       close(`${targetId} edge end y`, end.y, target.y + target.height / 2);
     }
     if (children.size === 0) errors.push('No edges measured');
@@ -868,9 +873,9 @@ test('mindmap edges meet node boundaries and stay level through filtered project
 
   // Reuse nodes across focus/style changes to catch stale handle measurements as well.
   for (const style of ['舒缓', '直线', '折线']) {
-    await help.locator('summary').click();
-    await help.getByRole('button', { name: style, exact: true }).click();
-    await help.locator('summary').click();
+    await page.getByRole('button', { name: '导图配置', exact: true }).click();
+    await page.getByRole('dialog', { name: '导图配置', exact: true }).getByRole('button', { name: style, exact: true }).click();
+    await page.getByRole('button', { name: '关闭导图配置', exact: true }).click();
     for (const [focus, visible, hidden] of [
       ['全图', 'align_backlog', null],
       ['当前工作', 'align_current', 'align_backlog'],
@@ -878,7 +883,7 @@ test('mindmap edges meet node boundaries and stay level through filtered project
     ] as const) {
       await overview.getByRole('button', { name: new RegExp(`^${focus}( |$)`) }).click();
       await expect(page.locator(`.react-flow__node[data-id="${visible}"]`)).toBeVisible();
-      if (hidden) await expect(page.locator(`.react-flow__node[data-id="${hidden}"]`)).toHaveCount(0);
+      if (hidden) await expect(page.locator(`.react-flow__node[data-id="${hidden}"] [data-mind-muted]`)).toHaveAttribute('data-mind-muted', 'true');
       await expect.poll(geometryErrors).toEqual([]);
     }
   }
@@ -924,8 +929,8 @@ test('calendar has task titles, multi-day events, editing and date navigation', 
       },
     ],
   });
-  await page.getByRole('link', { name: '日历', exact: true }).first().click();
-  await expect(page.getByRole('heading', { name: '日历', exact: true })).toBeVisible();
+  await page.getByRole('link', { name: '本月日历', exact: true }).first().click();
+  await expect(page.getByRole('heading', { name: '本月日历', exact: true })).toBeVisible();
   await expect(page.getByTestId('calendar-month')).toBeVisible();
   const cell = page.locator(`[data-calendar-date="${key}"]`);
   await expect(cell.getByText('calendar deadline', { exact: true })).toBeVisible();
@@ -935,8 +940,8 @@ test('calendar has task titles, multi-day events, editing and date navigation', 
   await page.keyboard.press('Escape');
   await cell.getByRole('button', { name: `${key}，查看日程`, exact: true }).click();
   await expect(page.getByTestId('day-scroll')).toBeVisible();
-  await page.getByRole('tab', { name: '周', exact: true }).click();
-  await expect(page.getByRole('tab', { name: '周', exact: true })).toHaveAttribute('data-state', 'active');
+  await page.getByRole('combobox', { name: '任务时间范围', exact: true }).selectOption('week');
+  await expect(page.getByRole('combobox', { name: '任务时间范围', exact: true })).toHaveValue('week');
 });
 
 test('today finds a due child under an undated project, inline capture inherits project', async ({
@@ -956,8 +961,10 @@ test('today finds a due child under an undated project, inline capture inherits 
       { ...task('later_child', 'later action'), parentId: 'project' },
     ],
   });
-  await page.getByRole('link', { name: '今天', exact: true }).first().click();
-  await expect(page.getByText('action for today', { exact: true })).toBeVisible();
+  await page.getByRole('link', { name: '当前任务', exact: true }).first().click();
+  await page.getByRole('tab', { name: '列表', exact: true }).click();
+  await page.getByRole('combobox', { name: '任务时间范围', exact: true }).selectOption('today');
+  await expect(page.locator('[data-row]').getByText('action for today', { exact: true })).toBeVisible();
   await expect(page.locator('[data-row]').getByText('later action', { exact: true })).toHaveCount(0);
   await page
     .getByRole('navigation', { name: '项目', exact: true })
@@ -968,7 +975,7 @@ test('today finds a due child under an undated project, inline capture inherits 
   await input.fill('new project action');
   await input.press('Enter');
   await expect(page.getByText('new project action', { exact: true })).toBeVisible();
-  await expect(page.getByRole('status', { name: '保存状态' })).toHaveText('已保存');
+  await expect(page.getByRole('status', { name: '保存状态', exact: true })).toHaveText('已保存');
   const data = await exported(page);
   expect(data.data.tasks.find((item: any) => item.title === 'new project action')).toMatchObject({
     parentId: 'project',
@@ -985,7 +992,7 @@ test('mobile navigation and task editing stay accessible without horizontal over
   await page.keyboard.press('Escape');
   await page
     .getByRole('navigation', { name: '移动导航' })
-    .getByRole('link', { name: '日历', exact: true })
+    .getByRole('link', { name: '本月日历', exact: true })
     .click();
   await expect(page.getByTestId('calendar-month')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

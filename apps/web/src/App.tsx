@@ -12,6 +12,7 @@ const SettingsPage = lazy(() => import('./features/settings/page'));
 const LoginPage = lazy(() => import('./features/auth/page'));
 const GalleryPage = lazy(() => import('./features/gallery/GalleryPage'));
 const ReviewsPage = lazy(() => import('./features/reviews/page'));
+const TrashPage = lazy(() => import('./features/trash/page'));
 const TmuxPage = lazy(() => import('./shared/TmuxViewer').then((module) => ({ default: module.TmuxPage })));
 function page(Component: LazyExoticComponent<ComponentType>) {
   return (
@@ -32,7 +33,7 @@ export default function App() {
     <AuthProvider>
       <Routes>
         <Route element={<Layout />}>
-          <Route index element={<Navigate to="/tasks" replace />} />
+          <Route index element={<Navigate to="/tasks?scope=week" replace />} />
           <Route path="/overview" element={page(DashboardPage)} />
           <Route path="/tasks" element={page(TasksPage)} />
           <Route path="/calendar" element={page(CalendarPage)} />
@@ -40,6 +41,7 @@ export default function App() {
           <Route path="/focus" element={page(FocusPage)} />
           <Route path="/habits" element={page(HabitsPage)} />
           <Route path="/reviews" element={page(ReviewsPage)} />
+          <Route path="/trash" element={page(TrashPage)} />
           <Route path="/settings" element={page(SettingsPage)} />
           <Route path="/gallery" element={page(GalleryPage)} />
         </Route>

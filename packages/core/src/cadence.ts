@@ -141,3 +141,16 @@ export function habitsDueToday(habits: Habit[], now = new Date()): Habit[] {
   const key = dayKeyOf(now);
   return habits.filter((h) => !h.archivedAt && !h.deletedAt && isDueOn(h, key));
 }
+
+/** Local-day reminders catch up when the app resumes, never repeat a completed
+ * day's target, and respect flexible weekly quotas as well as scheduled days. */
+export function habitReminderDue(habit: Habit, logs: HabitLog[], now = new Date()): boolean {
+  if (habit.deletedAt || habit.archivedAt || habit.createdAt > now.getTime() || habit.reminderEnabled === false || !habit.reminderAt || !/^([01]\d|2[0-3]):[0-5]\d$/.test(habit.reminderAt)) return false;
+  const key = dayKeyOf(now);
+  if (logCountOn(logs, habit.id, key) >= (habit.targetPerDay ?? 1)) return false;
+  if (habit.cadence.type === 'weekly' && !habit.cadence.days?.length) {
+    if (weekDone(habit, logs, now) >= habit.cadence.timesPerWeek) return false;
+  } else if (!isDueOn(habit, key)) return false;
+  const [hour, minute] = habit.reminderAt.split(':').map(Number);
+  return now.getHours() * 60 + now.getMinutes() >= hour! * 60 + minute!;
+}

@@ -1,8 +1,8 @@
 import { useSyncExternalStore } from 'react';
 import { useCortex } from '@cortex/crdt';
+import { TASK_VIEW_KEYS, normalizeTaskView, type TaskViewKey } from '@cortex/core';
 
-export const TASK_VIEW_KEYS = ['list', 'mindmap', 'matrix', 'gantt', 'timeline'] as const;
-export type TaskViewKey = (typeof TASK_VIEW_KEYS)[number];
+export { TASK_VIEW_KEYS, type TaskViewKey };
 export const isTaskView = (value: unknown): value is TaskViewKey =>
   TASK_VIEW_KEYS.includes(value as TaskViewKey);
 
@@ -20,7 +20,7 @@ function read(userId: string): Preferences {
     const raw = JSON.parse(localStorage.getItem(keyOf(userId)) ?? 'null');
     if (raw && typeof raw === 'object') {
       value = {
-        projects: Object.fromEntries(Object.entries(raw.projects ?? {}).filter(([, view]) => isTaskView(view))) as Preferences['projects'],
+        projects: Object.fromEntries(Object.entries(raw.projects ?? {}).map(([id, view]) => [id, normalizeTaskView(view)]).filter(([, view]) => view)) as Preferences['projects'],
       };
     }
   } catch { /* View preferences must never prevent opening a project. */ }

@@ -18,6 +18,8 @@ export function TaskMenu() {
   const ui = useUI();
   const menu = ui.taskMenu;
   const [sub, setSub] = useState<'main' | 'time' | 'priority'>('main');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
   /** 级联子菜单的落点(悬停到条目时按其 rect 计算:右侧优先,放不下翻左侧) */
   const [subPos, setSubPos] = useState<{ left: number; top: number } | null>(null);
   const closeTimer = useRef<number | null>(null);
@@ -50,7 +52,7 @@ export function TaskMenu() {
 
   // 每次打开都回到主菜单
   useEffect(() => {
-    if (menu) { clearSub(); }
+    if (menu) { clearSub(); setError(''); }
   }, [menu]);
   useEffect(() => cancelCloseSub, []);
 
@@ -58,11 +60,11 @@ export function TaskMenu() {
   useEffect(() => {
     if (!menu) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') ui.closeTaskMenu();
+      if (e.key === 'Escape' && !busy) ui.closeTaskMenu();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [menu, ui]);
+  }, [menu, ui, busy]);
 
   if (!menu) return null;
   const task = data.tasks.find((t) => t.id === menu.taskId);
@@ -92,8 +94,26 @@ export function TaskMenu() {
   const hasChildren = (childrenIds.get(task.id)?.length ?? 0) > 0;
 
   const close = () => {
+    if (busy) return;
     ui.closeTaskMenu();
     setSub('main');
+  };
+
+  const persistAction = async (action: () => void) => {
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      store.stopUndoCapture();
+      action();
+      store.stopUndoCapture();
+      await store.flushPersistence();
+      ui.closeTaskMenu();
+    } catch {
+      setError('本地保存失败，请重试；也可从设置导出备份。');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const addChild = () => {
@@ -114,6 +134,7 @@ export function TaskMenu() {
     onHover?: (el: HTMLElement) => void;
   }) => (
     <button
+      disabled={busy}
       onClick={(e) => onSelect(e.currentTarget)}
       onMouseEnter={(e) => onHover?.(e.currentTarget)}
       className={cn(itemCls, danger && 'text-[var(--danger)] hover:bg-[var(--danger)]/10')}
@@ -141,7 +162,7 @@ export function TaskMenu() {
             <Plus className="h-4 w-4 shrink-0" /> 创建子任务
           </MenuItem>
           <MenuItem onHover={clearSub} onSelect={() => { close(); ui.selectTask(task.id); }}>
-            <Info className="h-4 w-4 shrink-0" /> 打开详情
+            <Info className="h-4 w-4 shrink-0" /> {project ? '编辑项目' : '打开详情'}
           </MenuItem>
           {!project && <MenuItem
             onHover={clearSub}
@@ -155,7 +176,7 @@ export function TaskMenu() {
             <Shapes className="h-4 w-4 shrink-0" />
             {structural ? '转为 TODO 任务' : task.parentId === null ? '转为项目' : '转为分组'}
           </MenuItem>}
-          {project && <MenuItem onHover={clearSub} onSelect={() => { store.setTaskStatus(task.id, 'archived'); close(); }}>归档项目</MenuItem>}
+          {project && <MenuItem onHover={clearSub} onSelect={() => { void persistAction(() => store.setTaskStatus(task.id, 'archived')); }}>归档项目</MenuItem>}
           {!structural && (
             <>
               <MenuItem onHover={(el) => openSub('time', el)} onSelect={(el) => openSub('time', el)}>
@@ -183,9 +204,14 @@ export function TaskMenu() {
             </>
           )}
           <div className="my-1 h-px bg-[var(--border)]" />
-          <MenuItem danger onHover={clearSub} onSelect={() => { ids.forEach((id) => store.softDeleteTask(id)); close(); }}>
+          <MenuItem danger onHover={clearSub} onSelect={() => {
+            if (data.tasks.some((task) => ids.includes(task.id) && isProject(task))) ui.requestTaskDeletion(store.userId, ids);
+            else void persistAction(() => { ids.forEach((id) => store.softDeleteTask(id)); });
+          }}>
             <Trash2 className="h-4 w-4 shrink-0" /> {multi ? `删除 ${ids.length} 个任务` : project ? '删除项目' : '删除任务'}
           </MenuItem>
+          {busy && <p role="status" className="px-2.5 py-1 text-xs text-muted">正在保存…</p>}
+          {error && <p role="alert" className="max-w-56 px-2.5 py-1 text-xs text-[var(--danger)]">{error}</p>}
         </div>
       </div>
 

@@ -2,18 +2,16 @@ import React, { lazy, Suspense, useEffect, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { Segmented, SegmentedList, SegmentedTrigger } from '@cortex/ui';
 import {
-  ListTodo,
-  LayoutGrid,
-  GitBranch,
-  CalendarRange,
-  GanttChartSquare,
   Library,
   MoreHorizontal,
 } from 'lucide-react';
 import { useCortex, useCortexData } from '@cortex/crdt';
-import { activeTasks, isProject, workProgress } from '@cortex/core';
+import { activeTasks, isProject, normalizeTaskView, workProgress } from '@cortex/core';
 import { useUI } from '@/state/ui';
 import { isTaskView, projectView, rememberProjectView, useProjectViewMemory } from './projectViews';
+import { TaskWindowControls } from './TaskWindowControls';
+import { TASK_VIEWS } from './viewOptions';
+import { SaveViewButton } from './savedViews/SaveViewButton';
 const ListView = lazy(() => import('./list/ListView').then((module) => ({ default: module.ListView })));
 const MatrixView = lazy(() =>
   import('./matrix/MatrixView').then((module) => ({ default: module.MatrixView })),
@@ -21,18 +19,10 @@ const MatrixView = lazy(() =>
 const MindMapView = lazy(() =>
   import('./mindmap/MindMapView').then((module) => ({ default: module.MindMapView })),
 );
-const TimelineView = lazy(() =>
-  import('./timeline/TimelineView').then((module) => ({ default: module.TimelineView })),
+const CalendarView = lazy(() =>
+  import('./timeline/TimelineView').then((module) => ({ default: module.CalendarView })),
 );
 const GanttView = lazy(() => import('./gantt/GanttView').then((module) => ({ default: module.GanttView })));
-
-const VIEWS = [
-  { key: 'list', label: '列表', icon: ListTodo },
-  { key: 'mindmap', label: '导图', icon: GitBranch },
-  { key: 'matrix', label: '四象限', icon: LayoutGrid },
-  { key: 'gantt', label: '甘特图', icon: GanttChartSquare },
-  { key: 'timeline', label: '时间线', icon: CalendarRange },
-] as const;
 
 export default function TasksPage() {
   const [params, setParams] = useSearchParams();
@@ -42,23 +32,33 @@ export default function TasksPage() {
   const store = useCortex();
   const memory = useProjectViewMemory();
   const projectId = params.get('project');
+  const saved = data.settings.savedViews.find((item) => item.id === params.get('saved'));
   const project = data.tasks.find((task) => task.id === projectId && !task.deletedAt && task.status !== 'archived' && isProject(task));
-  const view = isTaskView(requested) ? requested
-    : projectId ? projectView(memory, projectId)
-    : scope === 'week' ? 'gantt' : 'list';
+  const view = normalizeTaskView(requested) ?? (
+    projectId ? projectView(memory, projectId) : scope === 'week' ? 'gantt' : 'list');
   useEffect(() => {
-    if (project) rememberProjectView(store.userId, project.id, view);
-  }, [store.userId, project?.id, view]);
+    const needsTimeRange = (!projectId || !!saved) && ['gantt', 'timeline'].includes(view) && !['today', 'week', 'month', 'custom'].includes(scope ?? '');
+    if (isTaskView(requested) && !needsTimeRange) return;
+    setParams((previous) => {
+      const next = new URLSearchParams(previous);
+      next.set('view', view);
+      if (needsTimeRange) { next.set('scope', 'week'); next.delete('from'); next.delete('to'); }
+      return next;
+    }, { replace: true });
+  }, [requested, view, projectId, saved?.id, scope, setParams]);
+  useEffect(() => {
+    if (project && !saved) rememberProjectView(store.userId, project.id, view);
+  }, [store.userId, project?.id, saved?.id, view]);
   const progress = useMemo(() => workProgress(activeTasks(data.tasks)), [data.tasks]);
   const projectProgress = project ? progress.get(project.id) : null;
-  const title = project?.title || (scope === 'today' ? '今天' : scope === 'week' ? '本周' : '全部任务');
+  const title = saved?.name || project?.title || '当前任务';
   const display = data.settings.completedDisplay ?? 'inline-gray';
   const ui = useUI();
 
   if (projectId && !project) return (
     <div className="space-y-3 p-6 text-sm text-muted">
       <p>项目不存在或已归档。</p>
-      <Link to="/tasks" className="text-[var(--accent-solid)]">返回全部任务</Link>
+      <Link to="/tasks?scope=week" className="text-[var(--accent-solid)]">返回当前任务</Link>
     </div>
   );
 
@@ -67,16 +67,18 @@ export default function TasksPage() {
       <div className="flex min-h-16 shrink-0 flex-wrap items-center gap-3 border-b border-[var(--border)] px-5 py-3 lg:px-7">
         <div className="flex w-full shrink-0 items-center gap-2 sm:w-40">
           <h1 title={title} aria-label={title} className="min-w-0 flex-1 truncate text-lg font-semibold tracking-tight">
-            {project ? <button className="block w-full truncate text-left" aria-label={`编辑项目 ${title}`} onClick={() => ui.selectTask(project.id)}>{title}</button> : title}
+            {project && !saved ? <button className="block w-full truncate text-left" aria-label={`编辑项目 ${title}`} onClick={() => ui.selectTask(project.id)}>{title}</button> : title}
           </h1>
         </div>
         <Segmented
           value={view}
           onValueChange={(v) => {
-            const next = new URLSearchParams(params);
+            const next = new URLSearchParams(window.location.search);
             next.set('view', v);
-            if (projectId) {
+            if (projectId && !saved) {
               next.delete('scope');
+              next.delete('from');
+              next.delete('to');
               next.delete('mindFocus');
               next.delete('root');
             }
@@ -84,7 +86,7 @@ export default function TasksPage() {
           }}
         >
           <SegmentedList aria-label="任务视图">
-            {VIEWS.map(({ key, label, icon: Icon }) => (
+            {TASK_VIEWS.map(({ key, label, icon: Icon }) => (
               <SegmentedTrigger
                 key={key}
                 value={key}
@@ -100,6 +102,7 @@ export default function TasksPage() {
 
         {/* 右上角:已完成任务展现 + Gallery 入口 */}
         <div className="ml-auto flex items-center gap-2">
+          <SaveViewButton key={store.userId} view={view} />
           {projectProgress && projectProgress.total > 0 && <span aria-label="项目进度" className="text-xs tabular-nums text-muted">{projectProgress.done}/{projectProgress.total}</span>}
           {project && <button aria-label="项目菜单" title="项目菜单" className="text-muted hover:text-foreground" onClick={(event) => {
             const rect = event.currentTarget.getBoundingClientRect();
@@ -123,6 +126,7 @@ export default function TasksPage() {
           </Link>
         </div>
       </div>
+      <div className="shrink-0 border-b border-[var(--border)] px-5 py-2 lg:px-7"><TaskWindowControls temporal={['gantt', 'timeline'].includes(view)} /></div>
       <div className="min-h-0 flex-1">
         <Suspense
           fallback={
@@ -131,8 +135,8 @@ export default function TasksPage() {
             </div>
           }
         >
-          {view === 'list' && <ListView key={`list:${projectId ?? scope ?? 'all'}`} />}
-          {view === 'timeline' && <TimelineView key={`timeline:${projectId ?? 'all'}`} initialMode={projectId ? 'week' : 'day'} />}
+          {view === 'list' && <ListView key={`list:${projectId ?? 'all'}`} />}
+          {view === 'timeline' && <CalendarView key={`timeline:${projectId ?? 'all'}`} />}
           {view === 'gantt' && <GanttView key={`gantt:${projectId ?? 'all'}`} />}
           {view === 'matrix' && <MatrixView key={`matrix:${projectId ?? 'all'}`} />}
           {view === 'mindmap' && <MindMapView key={`mindmap:${projectId ?? 'all'}`} />}

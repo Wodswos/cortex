@@ -1,17 +1,26 @@
 import { useMemo } from 'react';
 import { useSearchParams } from 'react-router';
-import { tasksInProject } from '@cortex/core';
+import { activeTasks, tasksInProject } from '@cortex/core';
 import { useCortexData } from '@cortex/crdt';
+import { useTaskWindow } from './TaskWindowControls';
+import { tasksInWindow } from './taskWindow';
 
 /** Shared project boundary for task views; unrelated personal events stay in the global calendar. */
-export function useTaskViewData() {
+export function useTaskViewData(options?: { window?: boolean; ancestors?: boolean }) {
   const data = useCortexData();
   const [params] = useSearchParams();
   const projectId = params.get('project');
+  const { range } = useTaskWindow();
+  const { scope, start, days } = range;
   return useMemo(() => {
-    if (!projectId) return data;
-    const tasks = tasksInProject(data.tasks, projectId);
+    let tasks = projectId ? tasksInProject(data.tasks, projectId) : data.tasks;
+    if (options?.window) tasks = tasksInWindow(activeTasks(tasks).filter((task) => task.status !== 'inbox'), { scope, start, days }, options.ancestors);
+    if (projectId && options?.window && options.ancestors !== false && !tasks.some((task) => task.id === projectId)) {
+      const root = data.tasks.find((task) => task.id === projectId);
+      if (root) tasks = [root, ...tasks];
+    }
+    if (!projectId) return { ...data, tasks };
     const ids = new Set(tasks.map((task) => task.id));
     return { ...data, tasks, events: data.events.filter((event) => event.taskId && ids.has(event.taskId)) };
-  }, [data, projectId]);
+  }, [data, projectId, options?.window, options?.ancestors, scope, start, days]);
 }

@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { Folder, GripVertical, Plus } from 'lucide-react';
+import { ChevronRight, Folder, GripVertical, MoreHorizontal, Plus } from 'lucide-react';
 import {
   DndContext,
   KeyboardSensor,
@@ -21,10 +21,19 @@ import { activeTasks, gapTooSmall, isProject, newOrder, sortSiblings, type Task 
 import { useCortex } from '@cortex/crdt';
 import { cn, Dialog, DialogContent, Input, Button } from '@cortex/ui';
 import { isComposing } from '@/shared/ime';
+import { useUI } from '@/state/ui';
 import { projectView, rememberProjectView, useProjectViewMemory, type TaskViewKey } from '@/features/tasks/projectViews';
 
 export function ProjectList({ projects, selectedId }: { projects: Task[]; selectedId: string | null }) {
   const store = useCortex();
+  const collapseKey = `cortex:sidebar-projects-collapsed:${encodeURIComponent(store.userId)}`;
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem(collapseKey) === 'true'; } catch { return false; }
+  });
+  const collapse = (value: boolean) => {
+    setCollapsed(value);
+    try { localStorage.setItem(collapseKey, String(value)); } catch { /* Keep usable in memory. */ }
+  };
   const navigate = useNavigate();
   const memory = useProjectViewMemory();
   const [status, setStatus] = useState('');
@@ -46,6 +55,7 @@ export function ProjectList({ projects, selectedId }: { projects: Task[]; select
       }
       await store.flushPersistence();
       rememberProjectView(store.userId, createdId.current, 'list');
+      collapse(false);
       navigate(`/tasks?project=${encodeURIComponent(createdId.current)}`);
       setCreating(false);
     } catch {
@@ -87,7 +97,11 @@ export function ProjectList({ projects, selectedId }: { projects: Task[]; select
   return (
     <>
       <div className="workspace-section flex items-center justify-between">
-        <span>项目</span>
+        <button aria-label={collapsed ? '展开项目' : '收起项目'} aria-expanded={!collapsed} aria-controls="sidebar-projects" onClick={() => collapse(!collapsed)} className="-ml-1 flex min-h-7 flex-1 items-center gap-1 text-left hover:text-foreground">
+          <ChevronRight size={13} className={cn('shrink-0 transition-transform', !collapsed && 'rotate-90')} />
+          <span>项目</span>
+          {collapsed && <span className="ml-1 text-[10px] tabular-nums opacity-60">{projects.length}</span>}
+        </button>
         <button
           aria-label="新建项目"
           title="新建项目"
@@ -102,6 +116,7 @@ export function ProjectList({ projects, selectedId }: { projects: Task[]; select
           <Plus size={14} />
         </button>
       </div>
+      <div id="sidebar-projects" hidden={collapsed}>
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -134,7 +149,8 @@ export function ProjectList({ projects, selectedId }: { projects: Task[]; select
           </nav>
         </SortableContext>
       </DndContext>
-      {status && (
+      </div>
+      {!collapsed && status && (
         <span role="status" aria-label="项目排序保存状态" className="px-3 pt-1 text-[10px] text-muted">
           {status}
         </span>
@@ -166,6 +182,7 @@ export function ProjectList({ projects, selectedId }: { projects: Task[]; select
 }
 
 function ProjectRow({ task, selected, view }: { task: Task; selected: boolean; view: TaskViewKey }) {
+  const openTaskMenu = useUI((state) => state.openTaskMenu);
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
     useSortable({
       id: task.id,
@@ -174,29 +191,45 @@ function ProjectRow({ task, selected, view }: { task: Task; selected: boolean; v
     <div
       ref={setNodeRef}
       data-project-row={task.id}
+      data-selected={selected ? 'true' : undefined}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        openTaskMenu(task.id, event.clientX, event.clientY);
+      }}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={cn(
-        'group flex items-center rounded-md',
+        'workspace-project-row group flex items-center rounded-md',
         isDragging && 'relative z-10 bg-[var(--background)] shadow-sm',
       )}
     >
-      <Link
-        to={`/tasks?project=${encodeURIComponent(task.id)}&view=${view}`}
-        aria-current={selected ? 'page' : undefined}
-        className="workspace-nav min-w-0 flex-1"
-      >
-        <Folder />
-        <span className="truncate">{task.title || '未命名项目'}</span>
-      </Link>
       <button
         ref={setActivatorNodeRef}
         {...attributes}
         {...listeners}
         aria-label={`拖动项目 ${task.title || '未命名项目'} 排序`}
         title="拖动排序；也可按空格后用上下键移动"
-        className="mr-1 grid h-8 w-6 shrink-0 touch-none place-items-center text-muted/50 hover:text-foreground focus-visible:text-foreground md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+        className="workspace-project-action ml-1 grid h-8 w-5 shrink-0 touch-none place-items-center text-muted/50 hover:text-foreground focus-visible:text-foreground"
       >
         <GripVertical size={14} />
+      </button>
+      <Link
+        to={`/tasks?project=${encodeURIComponent(task.id)}&view=${view}`}
+        aria-current={selected ? 'page' : undefined}
+        className="workspace-nav min-w-0 flex-1 !pl-1.5"
+      >
+        <Folder />
+        <span className="truncate">{task.title || '未命名项目'}</span>
+      </Link>
+      <button
+        aria-label={`项目 ${task.title || '未命名项目'} 菜单`}
+        title="编辑、归档或删除项目"
+        onClick={(event) => {
+          const rect = event.currentTarget.getBoundingClientRect();
+          openTaskMenu(task.id, rect.right, rect.bottom);
+        }}
+        className="workspace-project-action mr-1 grid h-8 w-6 shrink-0 place-items-center rounded text-muted hover:bg-[var(--surface)] hover:text-foreground"
+      >
+        <MoreHorizontal size={15} />
       </button>
     </div>
   );

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS, EMPTY_DATA, type Review, type Task } from '../src/types';
-import { dueReviews, reviewFacts, reviewId, reviewPeriod, validDayKey } from '../src/reviews';
+import { dueReviews, reviewFacts, reviewId, reviewMarkdown, reviewPeriod, validDayKey } from '../src/reviews';
 import { validateCortexData } from '../src/validation';
 
 const task = (id: string, patch: Partial<Task> = {}): Task => ({
@@ -70,5 +70,16 @@ describe('review reminders and validation', () => {
     expect(() => validateCortexData({ settings: { reviewWeeklyDay: 7 } })).toThrow();
     expect(() => validateCortexData({ reviews: [{ id: 'daily_2026-02-30', kind: 'daily', periodStart: '2026-02-30', periodEnd: '2026-03-03' }] })).toThrow();
     expect(() => validateCortexData({ tasks: [] })).not.toThrow();
+  });
+  it('accepts older backups and validates and exports the separate solution field', () => {
+    const legacy = { id: 'daily_2026-10-25', kind: 'daily', periodStart: '2026-10-25', periodEnd: '2026-10-26', highlights: '', friction: 'Late feedback', nextSteps: '' };
+    expect(() => validateCortexData({ reviews: [legacy] })).not.toThrow();
+    expect(() => validateCortexData({ reviews: [{ ...legacy, resolution: null }] })).toThrow();
+    expect(() => validateCortexData({ reviews: [{ ...legacy, resolution: 7 }] })).toThrow();
+    expect(() => validateCortexData({ reviews: [{ ...legacy, resolution: 'x'.repeat(100001) }] })).toThrow();
+    const review: Review = { ...legacy, kind: 'daily', resolution: 'Review together before implementation', facts: null, completedAt: null, ownerId: 'u', createdAt: 1, updatedAt: 1 };
+    expect(() => validateCortexData({ reviews: [review] })).not.toThrow();
+    const facts = { capturedAt: 1, completed: [], pending: [], focusMin: 0, projects: [] };
+    expect(reviewMarkdown(review, facts)).toContain('## 阻碍与反思\nLate feedback\n\n### 如何解决？\nReview together before implementation\n\n## 下一步');
   });
 });

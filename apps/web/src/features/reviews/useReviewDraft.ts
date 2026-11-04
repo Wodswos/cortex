@@ -2,7 +2,7 @@ import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { useCortex, useCortexData } from '@cortex/crdt';
 import { reviewId, type Review, type ReviewPeriod } from '@cortex/core';
 
-export type ReviewTextField = 'highlights' | 'friction' | 'nextSteps';
+export type ReviewTextField = 'highlights' | 'friction' | 'resolution' | 'nextSteps';
 type Patch = Partial<Pick<Review, ReviewTextField>>;
 
 export function useReviewDraft(period: ReviewPeriod) {

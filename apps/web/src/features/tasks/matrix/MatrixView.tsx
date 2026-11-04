@@ -10,6 +10,8 @@ import {
 } from '@cortex/core';
 import { useCortex } from '@cortex/crdt';
 import { useTaskViewData } from '../useTaskViewData';
+import { useTaskWindow } from '../TaskWindowControls';
+import { windowDueAt } from '../taskWindow';
 import { useUI } from '@/state/ui';
 import { DueBadge, PriorityDot, StatusBadge } from '@/shared/components';
 
@@ -22,7 +24,8 @@ const QUADRANT_STYLE: Record<QuadrantKey, { glow: string; chip: string }> = {
 };
 
 export function MatrixView() {
-  const data = useTaskViewData();
+  const data = useTaskViewData({ window: true, ancestors: false });
+  const { range } = useTaskWindow();
   const [params] = useSearchParams();
   const projectId = params.get('project');
   const store = useCortex();
@@ -65,7 +68,7 @@ export function MatrixView() {
           {QUADRANTS.map((q) => (
             <QuadrantCell key={q.key} quadrant={q} tasks={byQ[q.key]} childrenMap={childrenMap} onNew={() => {
               const siblings = tasks.filter((t) => t.parentId === projectId);
-              const created = store.createTask({ title: '', status: 'todo', parentId: projectId, important: q.important, urgent: q.urgent, order: Math.max(-1000, ...siblings.map((task) => task.order)) + 1000 });
+              const created = store.createTask({ title: '', status: 'todo', parentId: projectId, dueAt: windowDueAt(range), important: q.important, urgent: q.urgent, order: Math.max(-1000, ...siblings.map((task) => task.order)) + 1000 });
               ui.selectTask(created.id);
             }} />
           ))}

@@ -21,6 +21,7 @@ import { useTaskTextDraft } from './useTaskTextDraft';
 
 export function TaskSheet() {
   const selectedId = useUI((s) => s.selectedTaskId);
+  const confirmingDeletion = useUI((s) => s.taskDeletion !== null);
   const selectTask = useUI((s) => s.selectTask);
   const data = useCortexData();
   const store = useCortex();
@@ -65,7 +66,7 @@ export function TaskSheet() {
 
   return (
     <Sheet
-      open={!!selectedId}
+      open={!!selectedId && !confirmingDeletion}
       onOpenChange={(o) => !o && draft.close(() => selectTask(null))}
       modal={isMobile}
     >
@@ -74,9 +75,11 @@ export function TaskSheet() {
         title={project ? '项目详情' : node ? '分组详情' : '任务详情'}
         onInteractOutside={(event) => {
           event.preventDefault();
+          if (useUI.getState().taskDeletion) return;
           draft.close(() => selectTask(null));
         }}
         onEscapeKeyDown={(e) => {
+          if (useUI.getState().taskDeletion) { e.preventDefault(); return; }
           // 「开始」选完会链式自动弹开「截止」输入框,此刻 Esc 只应关掉输入框。
           // Radix 在 document 捕获阶段监听 Esc(先于输入框自身),必须在这里
           // preventDefault 拦下,否则会顺手把整个抽屉也关掉
@@ -367,7 +370,10 @@ export function TaskSheet() {
                 <RotateCcw className="h-3.5 w-3.5" /> 恢复
               </Button>
             ) : (
-              <Button variant="danger" size="sm" onClick={() => store.softDeleteTask(task.id)}>
+              <Button variant="danger" size="sm" onClick={() => {
+                if (project) useUI.getState().requestTaskDeletion(store.userId, [task.id]);
+                else store.softDeleteTask(task.id);
+              }}>
                 <Trash2 className="h-3.5 w-3.5" /> 删除
               </Button>
             )}
