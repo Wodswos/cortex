@@ -1,5 +1,4 @@
 import { Cadence, Habit, HabitLog } from './types';
-import { habitReminderTimes } from './habitConfig';
 import { dayKeyOf, dateFromDayKey, addDays, startOfWeek } from './time';
 
 function daysBetween(a: string, b: string): number {
@@ -146,27 +145,12 @@ export function habitsDueToday(habits: Habit[], now = new Date()): Habit[] {
 /** Local-day reminders catch up when the app resumes, never repeat a completed
  * day's target, and respect flexible weekly quotas as well as scheduled days. */
 export function habitReminderDue(habit: Habit, logs: HabitLog[], now = new Date()): boolean {
-  return habitReminderSlot(habit, logs, now) !== null;
-}
-
-/** The latest elapsed slot sets expected progress; early check-ins count toward
- * later slots too, and missed slots catch up within the current local day. */
-export function habitReminderSlot(habit: Habit, logs: HabitLog[], now = new Date()): { time: string; target: number } | null {
-  if (habit.deletedAt || habit.archivedAt || habit.createdAt > now.getTime() || habit.reminderEnabled === false) return null;
+  if (habit.deletedAt || habit.archivedAt || habit.createdAt > now.getTime() || habit.reminderEnabled === false || !habit.reminderAt || !/^([01]\d|2[0-3]):[0-5]\d$/.test(habit.reminderAt)) return false;
   const key = dayKeyOf(now);
-  const count = logCountOn(logs, habit.id, key), target = habit.targetPerDay ?? 1;
-  if (count >= target) return null;
+  if (logCountOn(logs, habit.id, key) >= (habit.targetPerDay ?? 1)) return false;
   if (habit.cadence.type === 'weekly' && !habit.cadence.days?.length) {
-    if (weekDone(habit, logs, now) >= habit.cadence.timesPerWeek) return null;
-  } else if (!isDueOn(habit, key)) return null;
-  const times = habitReminderTimes(habit);
-  const minuteNow = now.getHours() * 60 + now.getMinutes();
-  for (let index = times.length - 1; index >= 0; index--) {
-    const time = times[index]!;
-    const [hour, minute] = time.split(':').map(Number);
-    if (minuteNow < hour! * 60 + minute!) continue;
-    const expected = Math.ceil(target * (index + 1) / times.length);
-    return count < expected ? { time, target: expected } : null;
-  }
-  return null;
+    if (weekDone(habit, logs, now) >= habit.cadence.timesPerWeek) return false;
+  } else if (!isDueOn(habit, key)) return false;
+  const [hour, minute] = habit.reminderAt.split(':').map(Number);
+  return now.getHours() * 60 + now.getMinutes() >= hour! * 60 + minute!;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { habitReminderDue, habitReminderSlot, habitReminderTimes, validateCortexData, validateHabitConfig, type Habit, type HabitLog } from '../src';
+import { habitReminderDue, validateCortexData, validateHabitConfig, type Habit, type HabitLog } from '../src';
 const habit = (patch: Partial<Habit> = {}): Habit => ({ id: 'habit', name: '阅读', icon: 'Flame', color: '#6b80ae', cadence: { type: 'daily' }, reminderAt: '20:00', targetPerDay: 2, ownerId: 'u', createdAt: new Date('2026-11-01T12:00:00').getTime(), ...patch });
 const log = (date: string, count: number, patch: Partial<HabitLog> = {}): HabitLog => ({ id: 'log', habitId: 'habit', date, count, ownerId: 'u', ...patch });
 const at = (time: string) => new Date(`2026-11-04T${time}:00`);
@@ -29,29 +29,5 @@ describe('habit reminders', () => {
     expect(() => validateCortexData({ habits: [habit()] })).not.toThrow();
     expect(() => validateHabitConfig({ reminderAt: '', reminderEnabled: false })).not.toThrow();
     for (const patch of [{ name: '' }, { reminderAt: '24:00' }, { reminderAt: '8:00' }, { reminderEnabled: 'yes' }, { targetPerDay: 1.5 }, { cadence: { type: 'weekly', timesPerWeek: 0 } }]) expect(() => validateCortexData({ habits: [{ ...habit(), ...patch }] })).toThrow();
-  });
-  it('stages multiple times by cumulative progress, catches missed slots and counts early check-ins', () => {
-    const twice = habit({ reminderTimes: ['20:00', '08:00'] });
-    expect(habitReminderTimes(twice)).toEqual(['08:00', '20:00']);
-    expect(habitReminderSlot(twice, [], at('07:59'))).toBeNull();
-    expect(habitReminderSlot(twice, [], at('08:00'))).toEqual({ time: '08:00', target: 1 });
-    expect(habitReminderSlot(twice, [log('2026-11-04', 1)], at('19:59'))).toBeNull();
-    expect(habitReminderSlot(twice, [log('2026-11-04', 1)], at('20:00'))).toEqual({ time: '20:00', target: 2 });
-    expect(habitReminderSlot(twice, [], at('23:59'))).toEqual({ time: '20:00', target: 2 });
-    expect(habitReminderSlot(twice, [log('2026-11-04', 2)], at('20:00'))).toBeNull();
-    expect(habitReminderSlot(twice, [log('2026-11-03', 2)], at('08:00'))).toEqual({ time: '08:00', target: 1 });
-    expect(habitReminderSlot({ ...twice, targetPerDay: 3 }, [log('2026-11-04', 1)], at('08:00'))).toEqual({ time: '08:00', target: 2 });
-    expect(habitReminderSlot({ ...twice, targetPerDay: 1 }, [log('2026-11-04', 1)], at('20:00'))).toBeNull();
-    expect(habitReminderSlot({ ...twice, reminderEnabled: false }, [], at('20:00'))).toBeNull();
-    expect(habitReminderSlot({ ...twice, cadence: { type: 'weekly', timesPerWeek: 2 } }, [log('2026-11-02', 2)], at('20:00'))).toBeNull();
-    expect(habitReminderTimes(habit({ reminderTimes: [] }))).toEqual([]);
-    expect(habitReminderDue(habit({ reminderTimes: [] }), [], at('20:00'))).toBe(false);
-  });
-  it('validates all multi-time schedules before import, including duplicates and size limits', () => {
-    expect(() => validateCortexData({ habits: [habit({ reminderTimes: ['08:00', '20:00'] })] })).not.toThrow();
-    for (const reminderTimes of [null, '08:00', ['08:00', '08:00'], ['8:00'], ['24:00'], [1], [''], Array.from({ length: 25 }, (_, i) => `${String(Math.floor(i / 60)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}`)]) {
-      expect(() => validateHabitConfig({ reminderTimes })).toThrow();
-      expect(() => validateCortexData({ habits: [{ ...habit(), reminderTimes }] })).toThrow();
-    }
   });
 });

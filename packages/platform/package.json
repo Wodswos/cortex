@@ -8,10 +8,6 @@
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {
-    "@capacitor/core": "^6.2.0",
-    "@capacitor/local-notifications": "^6.1.0"
-  },
   "peerDependencies": {
     "react": "^18.0.0"
   },
