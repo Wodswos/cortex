@@ -11,16 +11,41 @@ describe('mobile Gantt time navigation', () => {
       expect(pager.finish()).toBe(0);
     }
   });
-  it('pans a zoomed interval before paging, and counts only movement beyond its edge', () => {
+  it('only pans when the gesture reaches an edge from within the interval, even if pulled far or fast', () => {
     const pan = createGanttTouchPager(point(300, 0, 0), 0, 300);
     expect(pan.move(point(80)).scrollLeft).toBe(220);
     expect(pan.finish()).toBe(0);
     const edge = createGanttTouchPager(point(300, 0, 0), 250, 300);
     expect(edge.move(point(210))).toEqual({ captured: true, scrollLeft: 300, edge: 40 });
     expect(edge.finish()).toBe(0);
-    const next = createGanttTouchPager(point(300, 0, 0), 250, 300);
-    next.move(point(190));
-    expect(next.finish()).toBe(1);
+    for (const [origin, destination] of [[250, 100], [50, 500]]) {
+      for (const time of [60, 400]) {
+        const first = createGanttTouchPager(point(300, 0, 0), origin, 300);
+        const result = first.move(point(destination, 0, time));
+        expect(result.scrollLeft).toBe(destination < 300 ? 300 : 0);
+        expect(first.finish()).toBe(0);
+      }
+    }
+  });
+  it('pages only after a new gesture starts at the corresponding edge', () => {
+    for (const [origin, destination, direction] of [[300, 190, 1], [0, 410, -1]]) {
+      const next = createGanttTouchPager(point(300, 0, 0), origin, 300);
+      next.move(point(destination));
+      expect(next.finish()).toBe(direction);
+    }
+    // Starting at one edge does not authorize crossing the entire other edge.
+    for (const [origin, destination] of [[0, -100], [300, 700]]) {
+      const crossing = createGanttTouchPager(point(300, 0, 0), origin, 300);
+      crossing.move(point(destination, 0, 60));
+      expect(crossing.finish()).toBe(0);
+    }
+  });
+  it('allows fractional edge rounding without treating an interior offset as an edge', () => {
+    for (const [origin, destination, expected] of [[0.5, 400, -1], [299.5, 200, 1], [1.5, 400, 0], [298.5, 200, 0]]) {
+      const pager = createGanttTouchPager(point(300, 0, 0), origin, 300);
+      pager.move(point(destination));
+      expect(pager.finish()).toBe(expected);
+    }
   });
   it('accepts a clear quick swipe while short slow pulls, vertical and diagonal gestures do not page', () => {
     const quick = createGanttTouchPager(point(200, 0, 0), 0, 0);

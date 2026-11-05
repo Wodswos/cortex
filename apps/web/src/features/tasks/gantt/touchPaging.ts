@@ -1,6 +1,6 @@
 type Point = { x: number; y: number; time: number };
 
-/** A finger pans any zoomed time axis first; only movement beyond an edge pages.
+/** Pan to an edge first; paging requires a new gesture starting at that edge.
  * Returning an explicit scroll position avoids mixing native x scrolling with paging. */
 export function createGanttTouchPager(start: Point, scrollLeft: number, maxScroll: number) {
   let axis: 'pending' | 'x' | 'y' = 'pending';
@@ -10,6 +10,9 @@ export function createGanttTouchPager(start: Point, scrollLeft: number, maxScrol
   let elapsed = 0;
   const max = Math.max(0, maxScroll);
   const origin = Math.max(0, Math.min(max, scrollLeft));
+  // Scroll positions can be fractional; one CSS pixel is visually at the edge.
+  const startedAtLeft = origin <= 1;
+  const startedAtRight = max - origin <= 1;
   return {
     move(point: Point) {
       dx = point.x - start.x;
@@ -31,6 +34,7 @@ export function createGanttTouchPager(start: Point, scrollLeft: number, maxScrol
       if (finished) return 0;
       finished = true;
       if (axis !== 'x') return 0;
+      if (edge > 0 ? !startedAtRight : !startedAtLeft) return 0;
       const distance = Math.abs(edge);
       const quick = distance >= 32 && elapsed <= 220 && Math.abs(dx) / elapsed >= 0.5;
       return distance >= 56 || quick ? edge > 0 ? 1 : -1 : 0;

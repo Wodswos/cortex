@@ -104,18 +104,39 @@ test('a mobile horizontal swipe changes time without opening navigation or chang
   expect(await exportedDates(page)).toEqual(expected);
 });
 
-test('zoomed mobile time pans within the interval before an edge pull changes the interval', async ({ page }) => {
+test('zoomed mobile time requires a new gesture at either edge before paging', async ({ page }) => {
   await seed(page);
   const pane = page.locator('[data-gantt-scroll]');
   await page.getByTitle('时间轴放大(拖条可按 5 分钟微调)').click();
-  expect(await pane.evaluate(element => element.scrollWidth - element.clientWidth)).toBeGreaterThan(150);
+  const maxScroll = await pane.evaluate(element => element.scrollWidth - element.clientWidth);
+  expect(maxScroll).toBeGreaterThan(150);
   expect(await swipe(page, '[data-gantt-scroll]', -90)).toBe(true);
   await expect.poll(() => pane.evaluate(element => element.scrollLeft)).toBe(90);
   await expect(page).toHaveURL(/from=2026-11-02/);
-  await pane.evaluate(element => { element.scrollLeft = element.scrollWidth; });
+
+  // Even a long, fast pull past the far edge only pans when it began inside.
+  expect(await swipe(page, '[data-gantt-scroll]', -(maxScroll + 120))).toBe(true);
+  await expect.poll(() => pane.evaluate(element => element.scrollLeft)).toBe(maxScroll);
+  await expect(page).toHaveURL(/from=2026-11-02/);
   expect(await swipe(page, '[data-gantt-scroll]', -90)).toBe(true);
   await expect(page).toHaveURL(/from=2026-11-09/);
   await expect.poll(() => pane.evaluate(element => element.scrollLeft)).toBe(0);
+
+  await pane.evaluate(element => { element.scrollLeft = 90; });
+  expect(await swipe(page, '[data-gantt-scroll]', 210)).toBe(true);
+  await expect.poll(() => pane.evaluate(element => element.scrollLeft)).toBe(0);
+  await expect(page).toHaveURL(/from=2026-11-09/);
+  expect(await swipe(page, '[data-gantt-scroll]', 90)).toBe(true);
+  await expect(page).toHaveURL(/from=2026-11-02/);
+
+  // Starting at the opposite edge does not authorize a page after crossing
+  // the whole interval: the start edge must match the outgoing direction.
+  expect(await swipe(page, '[data-gantt-scroll]', -(maxScroll + 120))).toBe(true);
+  await expect.poll(() => pane.evaluate(element => element.scrollLeft)).toBe(maxScroll);
+  await expect(page).toHaveURL(/from=2026-11-02/);
+  expect(await swipe(page, '[data-gantt-scroll]', maxScroll + 120)).toBe(true);
+  await expect.poll(() => pane.evaluate(element => element.scrollLeft)).toBe(0);
+  await expect(page).toHaveURL(/from=2026-11-02/);
   await expect(page.locator('.workspace-sidebar')).toBeHidden();
 });
 
@@ -131,6 +152,32 @@ test('trusted mobile touch pages an empty task track without rescheduling the ta
     await page.waitForTimeout(20);
   }
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await expect(page).toHaveURL(/from=2026-11-09/);
+  await expect(page.locator('.workspace-sidebar')).toBeHidden();
+
+  // Repeat with trusted input in a zoomed interval: reaching the right edge
+  // must finish without paging, then a new outward touch may page.
+  await page.goto(route);
+  await expect(page.locator('[data-gantt-bar="short-task"]')).toBeVisible();
+  await page.getByTitle('时间轴放大(拖条可按 5 分钟微调)').click();
+  const pane = page.locator('[data-gantt-scroll]');
+  const maxScroll = await pane.evaluate(element => element.scrollWidth - element.clientWidth);
+  expect(maxScroll).toBeGreaterThan(150);
+  await pane.evaluate(element => { element.scrollLeft = element.scrollWidth - element.clientWidth - 35; });
+  const zoomedTrack = (await page.locator('[data-gantt-track]').first().boundingBox())!;
+  const zoomedY = zoomedTrack.y + zoomedTrack.height / 2;
+  const outward = async () => {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 350, y: zoomedY }] });
+    for (const delta of [15, 35, 60, 90, 115]) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 350 - delta, y: zoomedY + 3 }] });
+      await page.waitForTimeout(20);
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  };
+  await outward();
+  await expect.poll(() => pane.evaluate(element => element.scrollLeft)).toBe(maxScroll);
+  await expect(page).toHaveURL(/from=2026-11-02/);
+  await outward();
   await expect(page).toHaveURL(/from=2026-11-09/);
   await expect(page.locator('.workspace-sidebar')).toBeHidden();
   const expected = tasks.map(item => ({ id: item.id, startAt: 'startAt' in item ? item.startAt ?? null : null, dueAt: 'dueAt' in item ? item.dueAt ?? null : null }));
