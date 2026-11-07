@@ -258,6 +258,12 @@ importers:
 
   packages/platform:
     dependencies:
+      '@capacitor/core':
+        specifier: ^6.2.0
+        version: 6.2.1
+      '@capacitor/local-notifications':
+        specifier: ^6.1.0
+        version: 6.1.3(@capacitor/core@6.2.1)
       react:
         specifier: ^18.0.0
         version: 18.3.1

@@ -72,12 +72,16 @@ test('one click hides or shows completed tasks in all five views and persists th
   await expect(checkbox).toBeChecked();
   await expect(page.getByText('Completed example', { exact: true })).toHaveCount(0);
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(checkbox).toBeVisible();
+  await expect(checkbox).toBeHidden();
+  await page.getByRole('button', { name: '任务更多操作', exact: true }).click();
+  await expect(page.getByRole('menuitemcheckbox', { name: '隐藏已完成', exact: true })).toHaveAttribute('aria-checked', 'true');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
 test('Gantt handles keep the opposite endpoint stable across midnight, and moving one-sided tasks keeps their duration', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 960 });
+  // An integral day width keeps a six-hour mouse movement representable in
+  // WebKit, which rounds injected mouse coordinates to device pixels.
+  await page.setViewportSize({ width: 1448, height: 960 });
   await page.clock.install({ time: fixedNow });
   await seed(page, { tasks: [task('due_only', { dueAt: stamp(21, 18) }), task('start_only', { startAt: stamp(21, 10) }), task('move_only', { dueAt: stamp(21, 20) })] });
   const open = async () => {

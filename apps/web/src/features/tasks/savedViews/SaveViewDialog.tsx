@@ -6,7 +6,7 @@ import { Button, Dialog, DialogContent, Input } from '@cortex/ui';
 import { TASK_VIEWS } from '../viewOptions';
 import { isComposing } from '@/shared/ime';
 
-export function SaveViewDialog({ initial, editing = false, onClose }: { initial: SavedTaskView; editing?: boolean; onClose: () => void }) {
+export function SaveViewDialog({ initial, editing = false, onClose, restoreFocus }: { initial: SavedTaskView; editing?: boolean; onClose: () => void; restoreFocus?: () => void }) {
   const store = useCortex();
   const data = useCortexData();
   const navigate = useNavigate();
@@ -35,7 +35,7 @@ export function SaveViewDialog({ initial, editing = false, onClose }: { initial:
   };
   const field = 'h-9 w-full min-w-0 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 text-sm outline-none focus:border-[var(--accent-solid)]';
   return <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
-    <DialogContent title={editing ? '编辑快捷视图' : '保存快捷视图'} className="top-[10%] max-h-[80dvh] w-[min(92vw,440px)] overflow-y-auto">
+    <DialogContent title={editing ? '编辑快捷视图' : '保存快捷视图'} className="top-[10%] max-h-[80dvh] w-[min(92vw,440px)] overflow-y-auto" onCloseAutoFocus={restoreFocus ? (event) => { event.preventDefault(); restoreFocus(); } : undefined}>
       <form onSubmit={(event) => void save(event)} className="space-y-4">
         <label className="block space-y-1.5 text-sm"><span>视图名称</span><Input autoFocus required maxLength={60} value={value.name} disabled={busy} onChange={(event) => change({ name: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter' && isComposing(event)) event.preventDefault(); }} /></label>
         <div className="grid grid-cols-2 gap-3">

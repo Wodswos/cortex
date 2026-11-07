@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router';
 import {
   ListTodo,
@@ -34,6 +34,7 @@ import { ReviewReminder } from '../features/reviews/ReviewReminder';
 import { HabitReminder } from '../features/habits/HabitReminder';
 import { SavedViewsNav } from '../features/tasks/savedViews/SavedViewsNav';
 import { TASK_VIEWS } from '../features/tasks/viewOptions';
+import { useMobileNavigationSwipe } from './useMobileNavigationSwipe';
 const TmuxViewer = lazy(() =>
   import('../shared/TmuxViewer').then((module) => ({ default: module.TmuxViewer })),
 );
@@ -96,6 +97,7 @@ export function Layout() {
   const store = useCortex();
   const location = useLocation();
   const [navigationOpen, setNavigationOpen] = useState(false);
+  const frameRef = useRef<HTMLDivElement>(null);
   const sidebar = useSidebarWidth();
   const setCommand = useUI((s) => s.setCommand);
   const setCapture = useUI((s) => s.setQuickCapture);
@@ -121,6 +123,7 @@ export function Layout() {
   useEffect(() => {
     setNavigationOpen(false);
   }, [location.pathname, location.search]);
+  useMobileNavigationSwipe(frameRef, !immersive && phase !== 'loading', navigationOpen, setNavigationOpen);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (isComposing(event)) return;
@@ -148,7 +151,8 @@ export function Layout() {
       ) {
         event.preventDefault();
         setCapture(true);
-      } else if (event.key === 'Escape' && immersive) useTimer.getState().setImmersive(false);
+      } else if (event.key === 'Escape' && navigationOpen) setNavigationOpen(false);
+      else if (event.key === 'Escape' && immersive) useTimer.getState().setImmersive(false);
     };
     const capture = () => setCapture(true);
     window.addEventListener('keydown', onKey);
@@ -157,7 +161,7 @@ export function Layout() {
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('cortex:quick-capture', capture);
     };
-  }, [setCommand, setCapture, store, immersive]);
+  }, [setCommand, setCapture, store, immersive, navigationOpen]);
   if (phase === 'loading')
     return (
       <div className="grid h-full place-items-center">
@@ -174,7 +178,7 @@ export function Layout() {
 
   const nav = (items: typeof primary) =>
     items.map(({ to, label, icon: Icon }) => (
-      <Link key={to} to={to} className="workspace-nav" aria-current={active(to) ? 'page' : undefined}>
+      <Link key={to} to={to} className={cn('workspace-nav', to === '/inbox' && 'workspace-nav-desktop')} aria-current={active(to) ? 'page' : undefined}>
         <Icon />
         <span>{label}</span>
         {to === '/inbox' && inboxCount > 0 && (
@@ -183,21 +187,21 @@ export function Layout() {
       </Link>
     ));
   return (
-    <div className="flex h-full overflow-hidden bg-[var(--background)]">
+    <div ref={frameRef} className="flex h-full overflow-hidden bg-[var(--background)]">
       {!immersive && (
         <>
-          {navigationOpen && (
-            <button
-              aria-label="关闭导航"
-              className="fixed inset-0 z-40 bg-black/20 md:hidden"
-              onClick={() => setNavigationOpen(false)}
-            />
-          )}
+          <button
+            aria-label="关闭导航"
+            tabIndex={navigationOpen ? 0 : -1}
+            className={cn('workspace-navigation-backdrop fixed inset-x-0 top-0 z-40 h-[var(--app-height,100dvh)] bg-black/20 md:hidden', navigationOpen && 'workspace-navigation-backdrop-open')}
+            onClick={() => setNavigationOpen(false)}
+          />
           <aside
+            id="workspace-sidebar"
             style={{ '--sidebar-width': `${sidebar.width}px` } as React.CSSProperties}
             className={cn(
-              'workspace-sidebar flex-col px-3 py-5',
-              navigationOpen ? 'fixed top-[env(safe-area-inset-top)] bottom-[env(safe-area-inset-bottom)] left-[env(safe-area-inset-left)] z-50 flex' : 'hidden md:flex',
+              'workspace-sidebar flex flex-col px-3 py-5',
+              navigationOpen && 'workspace-sidebar-open',
             )}
           >
             <SidebarResize width={sidebar.width} onChange={sidebar.setWidth} />
@@ -249,9 +253,11 @@ export function Layout() {
       )}
       <div className="flex min-w-0 flex-1 flex-col">
         {!immersive && (
-          <header className="flex h-12 shrink-0 items-center gap-3 border-b border-[var(--border)] px-4 lg:px-6">
+          <header className="flex h-10 shrink-0 items-center gap-3 border-b border-[var(--border)] px-3 md:h-12 md:px-4 lg:px-6">
             <button
               aria-label="打开导航"
+              aria-controls="workspace-sidebar"
+              aria-expanded={navigationOpen}
               onClick={() => setNavigationOpen(true)}
               className="text-muted md:hidden"
             >
@@ -302,12 +308,12 @@ export function Layout() {
             aria-label="移动导航"
             className="flex shrink-0 justify-around border-t border-[var(--border)] bg-[var(--background)] md:hidden"
           >
-            {[...primary, ...data.settings.savedViews.slice(0, 1).map((view) => ({ to: savedViewHref(view), label: view.name, icon: TASK_VIEWS.find((item) => item.key === view.view)!.icon }))].map(({ to, label, icon: Icon }) => (
+            {[...primary.filter(item => item.to !== '/inbox'), ...data.settings.savedViews.slice(0, 1).map((view) => ({ to: savedViewHref(view), label: view.name, icon: TASK_VIEWS.find((item) => item.key === view.view)!.icon }))].map(({ to, label, icon: Icon }) => (
               <Link
                 key={to}
                 to={to}
                 className={cn(
-                  'flex min-h-14 min-w-0 max-w-28 flex-col items-center justify-center gap-1 px-3 text-[10px]',
+                  'flex min-h-12 min-w-0 max-w-28 flex-col items-center justify-center gap-0.5 px-3 text-[10px]',
                   active(to) ? 'text-[var(--accent-solid)]' : 'text-muted',
                 )}
               >

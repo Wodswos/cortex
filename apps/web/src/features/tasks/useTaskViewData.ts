@@ -24,7 +24,7 @@ export function useTaskViewData(options?: { window?: boolean; ancestors?: boolea
       if (root) tasks = [root, ...tasks];
     }
     const extra = selection.filters.focus !== 'all' || selection.filters.status !== 'all' || selection.filters.priority !== 'all' || !!selection.filters.tagId;
-    const events = options?.context ? selection.events : selection.events.filter(event => event.taskId ? selection.matching.has(event.taskId) : !selection.projectId && !extra);
+    const events = options?.context ? selection.events : selection.events.filter(event => event.taskId ? selection.matchingEventTaskIds.has(event.taskId) : !selection.projectId && !extra);
     return { ...data, tasks, events, matchingTaskIds: selection.matching, taskFilters: selection.filters, hasTaskFilters: selection.narrowed };
   }, [data, params, options?.ancestors, options?.context, scope, start, days, now]);
 }

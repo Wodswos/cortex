@@ -1,9 +1,9 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useCortex } from '@cortex/crdt';
 import { habitReminderTimes, MAX_HABIT_REMINDER_TIMES, validateHabitConfig, type Cadence, type Habit } from '@cortex/core';
 import { Plus, X } from 'lucide-react';
 import { Button, Dialog, DialogContent, Input, cn } from '@cortex/ui';
-import { notifSupported, requestNotifPermission, type NotifPermission } from '@cortex/platform';
+import { getNotifPermission, nativeNotifSupported, onNotifPermissionChange, requestNotifPermission, type NotifPermission } from '@cortex/platform';
 import { isComposing } from '@/shared/ime';
 
 const COLORS = ['#6b80ae', '#659083', '#a78560', '#8c79a4', '#a47586', '#648f9c'];
@@ -25,7 +25,15 @@ export function HabitDialog({ habit, onClose }: { habit?: Habit; onClose: () => 
   const [remind, setRemind] = useState(initialTimes.length > 0 && habit?.reminderEnabled !== false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [permission, setPermission] = useState<NotifPermission>(() => notifSupported() ? Notification.permission : 'unsupported');
+  const nativeNotifications = nativeNotifSupported();
+  const [permission, setPermission] = useState<NotifPermission>('default');
+  useEffect(() => {
+    let active = true;
+    const refresh = () => { void getNotifPermission().then(value => { if (active) setPermission(value); }); };
+    const unsubscribe = onNotifPermissionChange(refresh);
+    refresh();
+    return () => { active = false; unsubscribe(); };
+  }, []);
   const createdId = useRef<string | null>(null);
   const colors = [...new Set([...COLORS, ...(habit?.color ? [habit.color] : [])])];
   const submit = async (event: React.FormEvent) => {
@@ -91,8 +99,8 @@ export function HabitDialog({ habit, onClose }: { habit?: Habit; onClose: () => 
             {reminderTimes.length < MAX_HABIT_REMINDER_TIMES && <button type="button" className="inline-flex items-center gap-1 py-1 text-xs text-muted hover:text-foreground" onClick={() => setReminderTimes(previous => [...previous, ''])}><Plus size={13} />添加时间</button>}
           </fieldset>
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-3.5 w-3.5 accent-[var(--accent-solid)]" checked={hasTime && remind && frequency !== 'custom'} disabled={busy || !hasTime || frequency === 'custom'} onChange={event => setRemind(event.target.checked)} />到时提醒</label>
-          <p className="text-xs leading-relaxed text-muted">{frequency === 'custom' ? '现有自定义规则暂不支持到时提醒。' : '多个时间会按比例分配每日目标，完成当前进度后等下一时间再提醒；提前打卡也计入目标。提醒在应用打开时生效，关闭网页后不会推送。'}</p>
-          {hasTime && remind && frequency !== 'custom' && <div className="text-xs leading-relaxed text-muted">{permission === 'granted' ? '浏览器通知已开启。' : permission === 'unsupported' || !window.isSecureContext ? '当前访问方式仅支持应用内提醒。' : permission === 'denied' ? '浏览器通知已被禁用，仍会显示应用内提醒。' : <button type="button" className="text-[var(--accent-solid)] underline underline-offset-2" onClick={() => void requestNotifPermission().then(setPermission)}>开启浏览器通知</button>}</div>}
+          <p className="text-xs leading-relaxed text-muted">{frequency === 'custom' ? '现有自定义规则暂不支持到时提醒。' : `多个时间会按比例分配每日目标，完成当前进度后等下一时间再提醒；提前打卡也计入目标。${nativeNotifications ? '开启系统通知后，后台和锁屏时也可收到提醒。' : '提醒在应用打开时生效，关闭网页后不会推送。'}`}</p>
+          {hasTime && remind && frequency !== 'custom' && <div className="text-xs leading-relaxed text-muted">{permission === 'granted' ? nativeNotifications ? '手机系统通知已开启。' : '浏览器通知已开启。' : permission === 'unsupported' || !nativeNotifications && !window.isSecureContext ? '当前访问方式仅支持应用内提醒。' : permission === 'denied' ? nativeNotifications ? '系统通知已关闭，可在 iPhone 设置 → 通知 → Cortex 中开启。' : '浏览器通知已被禁用，仍会显示应用内提醒。' : <button type="button" className="text-[var(--accent-solid)] underline underline-offset-2" onClick={() => void requestNotifPermission().then(setPermission)}>{nativeNotifications ? '开启手机系统通知' : '开启浏览器通知'}</button>}</div>}
         </div>
         {error && <p role="alert" className="text-xs text-[var(--danger)]">{error}</p>}
         <div className="flex justify-end gap-2 pt-1"><Button type="button" variant="ghost" disabled={busy} onClick={onClose}>取消</Button><Button type="submit" variant="primary" disabled={busy || !name.trim()}>{busy ? '正在保存…' : habit ? '保存修改' : '创建'}</Button></div>

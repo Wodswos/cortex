@@ -12,7 +12,7 @@ const choose = (values: CortexData, query: string) => selectWorkspaceTasks(value
 
 describe('shared workspace filters', () => {
   it('current means doing or unfinished overdue, including historic backlog, never merely planned work', () => {
-    const values = data([task('doing', { status: 'doing' }), task('old', { dueAt: day('2025-01-01') }), task('week', { dueAt: day('2026-11-06') }), task('finished', { status: 'done', dueAt: 1 }), task('todo'), task('inbox', { status: 'inbox', dueAt: 1 }), task('folder', { kind: 'node', status: 'doing' })]);
+    const values = data([task('doing', { status: 'doing', dueAt: day('2026-11-11') }), task('old', { dueAt: day('2025-01-01') }), task('week', { dueAt: day('2026-11-06') }), task('finished', { status: 'done', dueAt: 1 }), task('todo'), task('inbox', { status: 'inbox', dueAt: 1 }), task('folder', { kind: 'node', status: 'doing' })]);
     expect([...choose(values, 'work=current&scope=all').matching]).toEqual(['doing', 'old']);
     expect([...choose(values, 'work=overdue&scope=all').matching]).toEqual(['old']);
     expect([...choose(values, 'work=current&scope=week').matching]).toEqual([]);
@@ -28,13 +28,14 @@ describe('shared workspace filters', () => {
   });
   it('matches explicit intervals or linked events with calendar week boundaries', () => {
     const values = data([task('overlap', { startAt: day('2026-11-01'), dueAt: day('2026-11-03') }), task('event'), task('atEnd', { dueAt: new Date(2026, 10, 9).getTime() }), task('past')], [event('event', '2026-11-05', '2026-11-06'), event('past', '2026-09-01', '2026-09-02')]);
-    expect([...choose(values, 'scope=week').matching]).toEqual(['overlap', 'event']);
-    expect([...choose(values, 'scope=undated').matching]).toEqual(['past']);
+    expect([...choose(values, 'scope=week').matching]).toEqual(['overlap']);
+    expect([...choose(values, 'scope=week').matchingEventTaskIds]).toEqual(['overlap', 'event']);
+    expect(choose(values, 'scope=undated').range.scope).toBe('week');
     values.settings.weekStartsOn = 0;
     expect(dayKeyOf(choose(values, 'scope=week').range.start)).toBe('2026-11-01');
   });
   it('excludes deleted and archived projects and honors completed visibility without hiding live descendants', () => {
-    const values = data([task('deleted', { kind: 'node', project: true, deletedAt: 2 }), task('child', { parentId: 'deleted' }), task('archived', { kind: 'node', project: true, status: 'archived' }), task('archived-child', { parentId: 'archived' }), task('done', { status: 'done' }), task('live', { parentId: 'done', status: 'doing' })]);
+    const values = data([task('deleted', { kind: 'node', project: true, deletedAt: 2 }), task('child', { parentId: 'deleted' }), task('archived', { kind: 'node', project: true, status: 'archived' }), task('archived-child', { parentId: 'archived' }), task('done', { status: 'done' }), task('live', { parentId: 'done', status: 'doing', dueAt: day('2026-11-05') })]);
     values.settings.completedDisplay = 'hidden';
     const selected = choose(values, 'scope=all&work=current');
     expect([...selected.matching]).toEqual(['live']);
@@ -43,7 +44,7 @@ describe('shared workspace filters', () => {
     expect(choose(values, 'root=child').tasks).toEqual([]);
   });
   it('terminates ancestor traversal through imported cycles and leaves empty matches empty', () => {
-    const values = data([task('a', { parentId: 'b', status: 'doing' }), task('b', { parentId: 'a' })]);
+    const values = data([task('a', { parentId: 'b', status: 'doing', dueAt: day('2026-11-05') }), task('b', { parentId: 'a' })]);
     expect([...choose(values, 'work=current').context]).toEqual(['a', 'b']);
     expect([...choose(values, 'taskPriority=P0').matching]).toEqual([]);
     expect([...choose(values, 'taskPriority=P0').context]).toEqual([]);

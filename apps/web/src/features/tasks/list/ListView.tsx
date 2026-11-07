@@ -99,7 +99,7 @@ export function ListView() {
   const [params] = useSearchParams();
   const scope = params.get('scope');
   const { range } = useTaskWindow();
-  const { start: rangeStart, days: rangeDays, scope: rangeScope } = range;
+  const { start: rangeStart, days: rangeDays } = range;
   const projectId = params.get('project');
   const [newTitle, setNewTitle] = useState('');
   const [saveStatus, setSaveStatus] = useState('');
@@ -342,8 +342,7 @@ export function ListView() {
     const kids = childrenMap.get(parentId) ?? [];
     const created = store.createTask({
       title: '',
-      ...workspaceTaskDefaults(new URLSearchParams(window.location.search)),
-      ...(windowDueAt(range) != null ? { dueAt: windowDueAt(range) } : {}),
+      ...workspaceTaskDefaults(new URLSearchParams(window.location.search), undefined, windowDueAt(range)),
       parentId,
       order: newOrder(kids.at(-1)?.order),
     });
@@ -420,10 +419,9 @@ export function ListView() {
     const siblings = allChildren.get(projectId) ?? [];
     store.createTask({
       title: newTitle.trim(),
-      ...workspaceTaskDefaults(new URLSearchParams(window.location.search)),
+      ...workspaceTaskDefaults(new URLSearchParams(window.location.search), undefined, windowDueAt(range)),
       parentId: projectId,
       order: newOrder(siblings.at(-1)?.order),
-      ...(windowDueAt(range) != null ? { dueAt: windowDueAt(range) } : {}),
     });
     setNewTitle('');
     captureRef.current?.focus();
@@ -728,8 +726,7 @@ function TaskRow({
       e.preventDefault();
       const created = store.createTask({
         title: '',
-        ...workspaceTaskDefaults(new URLSearchParams(window.location.search)),
-        ...(newTaskDueAt != null ? { dueAt: newTaskDueAt } : {}),
+        ...workspaceTaskDefaults(new URLSearchParams(window.location.search), undefined, newTaskDueAt),
         parentId: task.parentId,
         order: newOrder(task.order, siblings[idx + 1]?.order),
       });

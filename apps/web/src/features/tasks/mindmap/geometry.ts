@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useStore, useStoreApi, useUpdateNodeInternals, type ReactFlowState } from '@xyflow/react';
 
 const invalidHandle = (handle: { x: number; y: number }) => !Number.isFinite(handle.x) || !Number.isFinite(handle.y);
@@ -38,14 +38,19 @@ export function useMindGeometry() {
   }, []);
   const missing = useStore(selector);
   const element = useStore((state) => state.domNode);
+  const initialize = useCallback(() => {
+    if (!element || document.visibilityState === 'hidden' || !element.isConnected || !element.clientWidth || !element.clientHeight) return;
+    const ids = pendingGeometry(store.getState());
+    if (ids.length) updateNodeInternals(ids);
+  }, [element, store, updateNodeInternals]);
+  useEffect(() => {
+    // Node measurements can change while ResizeObserver is still delivering.
+    // Repair on the next frame without re-observing the shallower graph root.
+    const frame = requestAnimationFrame(initialize);
+    return () => cancelAnimationFrame(frame);
+  }, [missing, initialize]);
   useEffect(() => {
     if (!element) return;
-    const initialize = () => {
-      if (document.visibilityState === 'hidden' || !element.isConnected || !element.clientWidth || !element.clientHeight) return;
-      const ids = pendingGeometry(store.getState());
-      if (ids.length) updateNodeInternals(ids);
-    };
-    initialize();
     const observer = new ResizeObserver(initialize);
     observer.observe(element);
     document.addEventListener('visibilitychange', initialize);
@@ -57,5 +62,5 @@ export function useMindGeometry() {
       window.removeEventListener('pageshow', initialize);
       window.removeEventListener('focus', initialize);
     };
-  }, [missing, element, store, updateNodeInternals]);
+  }, [element, initialize]);
 }

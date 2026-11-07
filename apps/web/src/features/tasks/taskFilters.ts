@@ -1,5 +1,5 @@
 import { activeTasks, isStructural, priorityOf, startOfDay, taskContextIds, taskRange, tasksInProject, workSignals, WORK_FOCUS, TASK_FILTER_STATUSES, TASK_FILTER_PRIORITIES, type CortexData, type WorkFocus, type Task } from '@cortex/core';
-import { readTaskWindow, taskMatchesWindow, windowEnd, type TaskWindow } from './taskWindow';
+import { isScheduledOnlyWorkspace, readTaskWindow, taskMatchesWindow, windowEnd, type TaskWindow } from './taskWindow';
 
 export const TASK_STATUSES = TASK_FILTER_STATUSES;
 export const TASK_PRIORITIES = TASK_FILTER_PRIORITIES;
@@ -12,13 +12,16 @@ export function readTaskFilters(params: URLSearchParams): WorkspaceTaskFilters {
 }
 
 /** New tasks inherit explicit filters, keeping the item visible while editing. */
-export function workspaceTaskDefaults(params: URLSearchParams, now = Date.now()): Partial<Task> {
+export function workspaceTaskDefaults(params: URLSearchParams, now = Date.now(), defaultDueAt?: number): Partial<Task> {
   const filters = readTaskFilters(params);
+  const dueAt = filters.focus === 'overdue' && (!params.get('scope') || params.get('scope') === 'all')
+    ? startOfDay(now).getTime() - 60000
+    : defaultDueAt;
   return {
     status: ['todo', 'doing', 'done'].includes(filters.status) ? filters.status as Task['status'] : filters.focus === 'current' || filters.focus === 'doing' ? 'doing' : 'todo',
     ...(filters.priority !== 'all' ? { priority: filters.priority === 'high' ? 'P1' as const : filters.priority } : {}),
     ...(filters.tagId ? { tags: [filters.tagId] } : {}),
-    ...(filters.focus === 'overdue' && (!params.get('scope') || params.get('scope') === 'all') ? { dueAt: startOfDay(now).getTime() - 60000 } : {}),
+    ...(dueAt != null ? { dueAt } : {}),
   };
 }
 
@@ -30,7 +33,8 @@ export function selectWorkspaceTasks(data: CortexData, params: URLSearchParams, 
   const tasks = projectId ? tasksInProject(available, projectId) : available;
   const scopeIds = new Set(tasks.map(task => task.id));
   const events = data.events.filter(event => !event.deletedAt && (!projectId || !!event.taskId && scopeIds.has(event.taskId)));
-  const range = readTaskWindow(params, now, data.settings.weekStartsOn);
+  const scheduledOnly = isScheduledOnlyWorkspace(params, data.settings);
+  const range = readTaskWindow(params, now, data.settings.weekStartsOn, false, !scheduledOnly);
   const filters = readTaskFilters(params);
   const signals = workSignals(tasks, events, now, data.settings.weekStartsOn);
   // Current work includes explicitly active tasks and unfinished overdue work.
@@ -41,6 +45,8 @@ export function selectWorkspaceTasks(data: CortexData, params: URLSearchParams, 
     if (event.taskId && event.start < windowEnd(range) && event.end > range.start) eventTasks.add(event.taskId);
   }
   const matching = new Set<string>();
+  // A dated calendar block remains visible even if its task has no date fields.
+  const matchingEventTaskIds = new Set<string>();
   for (const task of tasks) {
     if (isStructural(task)) continue;
     if (focused && !focused.has(task.id)) continue;
@@ -49,11 +55,12 @@ export function selectWorkspaceTasks(data: CortexData, params: URLSearchParams, 
     if (filters.tagId && !task.tags.includes(filters.tagId)) continue;
     if (range.scope === 'undated' ? task.startAt != null || task.dueAt != null || scheduledTasks.has(task.id) : !taskMatchesWindow(task, range) && !eventTasks.has(task.id)) continue;
     if (data.settings.completedDisplay === 'hidden' && task.status === 'done') continue;
-    matching.add(task.id);
+    matchingEventTaskIds.add(task.id);
+    if (!scheduledOnly || task.startAt != null || task.dueAt != null) matching.add(task.id);
   }
-  const narrowed = filters.focus !== 'all' || filters.status !== 'all' || filters.priority !== 'all' || !!filters.tagId || range.scope !== 'all';
+  const narrowed = scheduledOnly || filters.focus !== 'all' || filters.status !== 'all' || filters.priority !== 'all' || !!filters.tagId || range.scope !== 'all';
   const context = narrowed ? taskContextIds(tasks, matching) : new Set(tasks.map(task => task.id));
-  return { tasks, events, matching, context, narrowed, range, filters, projectId };
+  return { tasks, events, matching, matchingEventTaskIds, context, narrowed, range, filters, projectId };
 }
 
 /** All-time task selection still needs a finite canvas in Gantt/calendar. Open
@@ -65,7 +72,7 @@ export function workspaceCanvasWindow(data: CortexData, params: URLSearchParams,
   for (const task of selected.tasks) if (selected.matching.has(task.id) && (task.startAt != null || task.dueAt != null)) {
     const interval = taskRange(task); dates.push(interval.start, interval.end);
   }
-  for (const event of selected.events) if (event.taskId && selected.matching.has(event.taskId)) dates.push(event.start, event.end - 1);
+  for (const event of selected.events) if (event.taskId && selected.matchingEventTaskIds.has(event.taskId)) dates.push(event.start, event.end - 1);
   if (!dates.length) return fallback;
   let first = Infinity, last = -Infinity;
   for (const value of dates) { first = Math.min(first, value); last = Math.max(last, value); }

@@ -67,7 +67,7 @@ import { useMindGeometry } from './geometry';
 import { useTaskViewData } from '../useTaskViewData';
 import { useTaskWindow } from '../TaskWindowControls';
 import { windowDueAt } from '../taskWindow';
-import { readTaskFilters, workspaceTaskDefaults } from '../taskFilters';
+import { readTaskFilters, selectWorkspaceTasks, workspaceTaskDefaults } from '../taskFilters';
 import { useAuth } from '@/app/auth';
 
 /** 「全部」视图的虚拟真根:所有顶层根任务连到同一个点上 */
@@ -556,8 +556,7 @@ function MindMapInner({
     const parent = byId.get(parentId);
     const created = store.createTask({
       title: '',
-      ...workspaceTaskDefaults(new URLSearchParams(window.location.search)),
-      ...(windowDueAt(range) != null ? { dueAt: windowDueAt(range) } : {}),
+      ...workspaceTaskDefaults(new URLSearchParams(window.location.search), undefined, windowDueAt(range)),
       parentId,
       order: (siblings.at(-1)?.order ?? 0) + 1,
       important: parent?.important ?? false,
@@ -582,8 +581,7 @@ function MindMapInner({
     const next = siblings[idx + 1];
     const created = store.createTask({
       title: '',
-      ...workspaceTaskDefaults(new URLSearchParams(window.location.search)),
-      ...(windowDueAt(range) != null ? { dueAt: windowDueAt(range) } : {}),
+      ...workspaceTaskDefaults(new URLSearchParams(window.location.search), undefined, windowDueAt(range)),
       parentId: task.parentId,
       order: newOrder(task.order, next?.order),
       important: task.important ?? false,
@@ -884,10 +882,20 @@ export function MindMapView({ focusToolbar }: { focusToolbar?: HTMLElement | nul
   const data = useCortexData();
   const store = useCortex();
   const [params, setParams] = useSearchParams();
+  const { range, now } = useTaskWindow();
   const projectId = params.get('project');
   // 根任务进 URL(?root=<id>):刷新/分享/回退都保留当前视图
   const rootTaskId = params.get('root') ?? params.get('project');
   const focusMode = readTaskFilters(params).focus;
+  const rootContext = useMemo(() => {
+    if (!range.scheduledOnly) return null;
+    const dateParams = new URLSearchParams();
+    for (const key of ['scope', 'from', 'to']) {
+      const value = params.get(key);
+      if (value) dateParams.set(key, value);
+    }
+    return selectWorkspaceTasks(data, dateParams, now).context;
+  }, [data, params, now, range.scheduledOnly]);
   const setRootTaskId = (id: string | null) => {
     const next = new URLSearchParams(params);
     next.delete('project');
@@ -896,7 +904,7 @@ export function MindMapView({ focusToolbar }: { focusToolbar?: HTMLElement | nul
     setParams(next, { replace: true });
   };
   const roots = data.tasks
-    .filter((t) => !t.parentId && !t.deletedAt && t.status !== 'inbox' && t.status !== 'archived')
+    .filter((t) => !t.parentId && !t.deletedAt && t.status !== 'inbox' && t.status !== 'archived' && (!rootContext || rootContext.has(t.id)))
     .sort(sortSiblings); // 按 order 排:标签行、画布、列表三处顺序一致,拖动换序才可见
   const hiddenRoots = data.settings.hiddenRoots ?? EMPTY_IDS;
   const visibleRoots = roots.filter((t) => !hiddenRoots.includes(t.id));
