@@ -48,6 +48,10 @@ async function seed(page: Page, data: unknown) {
   });
   await expect(page.getByText(/已合并备份/)).toBeVisible();
 }
+async function openFixtureWorkspace(page: Page, tasks: unknown[], view: 'list' | 'mindmap' = 'list') {
+  await seed(page, { tasks, settings: { savedViews: [{ id: 'fixture-all', name: '全部任务测试', view, scope: 'all', projectId: null }] } });
+  await page.goto(`/tasks?saved=fixture-all&view=${view}&scope=all`);
+}
 async function exported(page: Page) {
   await page.goto('/settings');
   await ready(page);
@@ -121,8 +125,8 @@ test('Chinese IME confirms text before submitting list and quick capture tasks',
 
 test('new mindmap nodes keep IME focus and ignore composing Enter', async ({ page, browserName }) => {
   test.skip(browserName !== 'chromium', 'Real composition uses Chromium CDP');
-  await seed(page, { tasks: [{ ...task('ime_project', 'IME project'), kind: 'node', parentId: null }] });
-  await page.goto('/tasks?view=mindmap');
+  await seed(page, { tasks: [{ ...task('ime_project', 'IME project'), kind: 'node', project: true, parentId: null }] });
+  await page.goto('/tasks?project=ime_project&view=mindmap');
   const root = page.locator('.react-flow__node[data-id="ime_project"]');
   await root.getByText('IME project', { exact: true }).click();
   await page.keyboard.press('Tab');
@@ -177,11 +181,13 @@ test('calendar drafts cancel without records and create only after confirmation'
   );
 });
 
+test.describe('task resources with mocked connection requests', () => {
+test.use({ serviceWorkers: 'block' });
 test('task resources have three stacked areas and distinguish connection failure from no sessions', async ({
   page,
 }) => {
   await seed(page, {
-    tasks: [task('resources', 'resource task')],
+    tasks: [{ ...task('resources', 'resource task'), dueAt: Date.now() }],
     settings: {
       servers: [{ id: 'bad', name: 'Missing credentials', host: 'user@host.invalid', registered: true }],
     },
@@ -221,6 +227,7 @@ test('task resources have three stacked areas and distinguish connection failure
     'href',
     'obsidian://open?vault=work&file=note',
   );
+});
 });
 
 test('week and day blank slots open cancellable task drafts, including on mobile', async ({ page }) => {
@@ -421,7 +428,7 @@ test('an untouched focused inspector never overwrites a remote edit', async ({
   baseURL,
 }) => {
   await account(context, 'inspector');
-  await seed(page, { tasks: [task('inspector_task', 'original title')] });
+  await seed(page, { tasks: [{ ...task('inspector_task', 'original title'), dueAt: Date.now() }] });
   await page.goto('/tasks');
   await ready(page);
   await page.getByText('original title', { exact: true }).first().click();
@@ -453,7 +460,7 @@ test('an untouched focused inspector never overwrites a remote edit', async ({
 });
 
 test('title and notes survive immediate outside dismissal, explicit close and reload', async ({ page }) => {
-  await seed(page, { tasks: [task('save_draft', 'before edit')] });
+  await seed(page, { tasks: [{ ...task('save_draft', 'before edit'), dueAt: Date.now() }] });
   await page.goto('/tasks');
   await ready(page);
   await page.locator('[data-row]').getByText('before edit', { exact: true }).click();
@@ -569,15 +576,14 @@ async function startListDrag(page: Page, id: string, fromTitle = false, grabBott
 }
 
 test('list drag previews pointer intent, opens collapsed parents, moves branches and supports outdent and undo', async ({ page }) => {
-  await seed(page, { tasks: [
+  await openFixtureWorkspace(page, [
     { ...task('drag_a', 'Drag project A'), kind: 'node', parentId: null, order: 0 },
     { ...task('drag_a1', 'Drag child A1'), parentId: 'drag_a', order: 0 },
     { ...task('drag_a2', 'Drag child A2'), parentId: 'drag_a', order: 1 },
     { ...task('drag_b', 'Drag project B'), kind: 'node', parentId: null, order: 1 },
     { ...task('drag_move', 'Drag moving branch'), parentId: null, order: 2 },
     { ...task('drag_leaf', 'Drag moving leaf'), parentId: 'drag_move', order: 0 },
-  ] });
-  await page.goto('/tasks');
+  ]);
   await listRow(page, 'drag_a').getByRole('button', { name: '收起 Drag project A', exact: true }).click();
   await expect(listRow(page, 'drag_a1')).toHaveCount(0);
   const target = (await listRow(page, 'drag_a').boundingBox())!;
@@ -622,12 +628,11 @@ test('list drag previews pointer intent, opens collapsed parents, moves branches
 });
 
 test('list drag sorts at row edges independently of grab point and Escape cancels the preview', async ({ page }) => {
-  await seed(page, { tasks: [
+  await openFixtureWorkspace(page, [
     { ...task('edge_a', 'Drag Alpha'), parentId: null, order: 0 },
     { ...task('edge_b', 'Drag Beta'), parentId: null, order: 1 },
     { ...task('edge_c', 'Drag Gamma'), parentId: null, order: 2 },
-  ] });
-  await page.goto('/tasks');
+  ]);
   const alpha = (await listRow(page, 'edge_a').boundingBox())!;
   await startListDrag(page, 'edge_c', false, true);
   await page.mouse.move(alpha.x + 150, alpha.y + 2, { steps: 12 });
@@ -695,10 +700,9 @@ test('list drag appends after filtered children and supports a touch handle', as
 });
 
 test('list drag scrolls long lists and keeps the pointer target after scrolling', async ({ page }) => {
-  await seed(page, { tasks: Array.from({ length: 36 }, (_, index) => ({
+  await openFixtureWorkspace(page, Array.from({ length: 36 }, (_, index) => ({
     ...task(`scroll_${index}`, `Drag scroll ${index}`), parentId: null, order: index,
-  })) });
-  await page.goto('/tasks');
+  })));
   const list = page.locator('[data-task-list]');
   await startListDrag(page, 'scroll_0', true);
   const bounds = (await list.boundingBox())!;
@@ -721,12 +725,11 @@ test('list drag scrolls long lists and keeps the pointer target after scrolling'
 
 test('list drag outdents dated work without changing its date or pretending to reorder date groups', async ({ page }) => {
   const dueAt = Date.now() + 86400000;
-  await seed(page, { tasks: [
+  await openFixtureWorkspace(page, [
     { ...task('dated_project', 'Drag dated project'), kind: 'node', parentId: null },
     { ...task('dated_peer', 'Drag undated child'), parentId: 'dated_project', order: 0 },
     { ...task('dated_action', 'Drag dated action'), parentId: 'dated_project', order: 1, dueAt },
-  ] });
-  await page.goto('/tasks');
+  ]);
   const project = (await listRow(page, 'dated_project').boundingBox())!;
   const peer = (await listRow(page, 'dated_peer').boundingBox())!;
   await startListDrag(page, 'dated_action');
@@ -754,7 +757,7 @@ test('mindmap focuses current work and factual risks while retaining project pat
   });
   await seed(page, {
     tasks: [
-      { ...task('focus_project', 'Focus project'), kind: 'node', parentId: null },
+      { ...task('focus_project', 'Focus project'), kind: 'node', project: true, parentId: null },
       { ...task('focus_section', 'Current phase'), kind: 'node', parentId: 'focus_project' },
       { ...task('focus_doing', 'Current action'), status: 'doing', parentId: 'focus_section' },
       { ...task('focus_week', 'Week action'), parentId: 'focus_section', dueAt: due.week },
@@ -769,7 +772,7 @@ test('mindmap focuses current work and factual risks while retaining project pat
       },
     ],
   });
-  await page.goto('/tasks?view=mindmap');
+  await page.goto('/tasks?project=focus_project&view=mindmap');
   const overview = page.getByRole('region', { name: '工作概览', exact: true });
   const node = (id: string) => page.locator(`.react-flow__node[data-id="${id}"]`);
   await overview.getByRole('button', { name: '当前工作', exact: true }).click();
@@ -810,8 +813,7 @@ test('mindmap focuses current work and factual risks while retaining project pat
 });
 
 test('mindmap edges meet node boundaries and stay level through filtered project paths', async ({ page, browserName }) => {
-  await seed(page, {
-    tasks: [
+  await openFixtureWorkspace(page, [
       { ...task('align_project_a', 'Project A'), kind: 'node', parentId: null },
       { ...task('align_phase_a', 'Phase A'), kind: 'node', parentId: 'align_project_a' },
       {
@@ -829,9 +831,7 @@ test('mindmap edges meet node boundaries and stay level through filtered project
         ...task('align_unplanned', 'Unplanned important work'),
         parentId: 'align_phase_b', priority: 'P1', important: true,
       },
-    ],
-  });
-  await page.goto('/tasks?view=mindmap');
+  ], 'mindmap');
   const overview = page.getByRole('region', { name: '工作概览', exact: true });
   const help = page.locator('details[aria-label="导图操作说明"]');
   await expect(page.locator('.react-flow__node[data-id="align_current"]')).toBeVisible();
@@ -991,7 +991,7 @@ test('today finds a due child under an undated project, inline capture inherits 
 
 test('mobile navigation and task editing stay accessible without horizontal overflow', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await seed(page, { tasks: [task('mobile_task', 'mobile edit')] });
+  await seed(page, { tasks: [{ ...task('mobile_task', 'mobile edit'), dueAt: Date.now() }] });
   await page.goto('/tasks');
   await ready(page);
   await page.getByText('mobile edit', { exact: true }).click();

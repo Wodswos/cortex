@@ -60,7 +60,7 @@ test('sidebar resizing follows the pointer, persists, supports keyboard and rese
 });
 
 test('sidebar project menu edits without opening the project and deletes a subtree as one undoable action', async ({ page }) => {
-  await seed(page, { tasks: [task('project', { title: 'Project old', kind: 'node', project: true }), task('child', { parentId: 'project' }), task('grandchild', { parentId: 'child' }), task('unrelated')] });
+  await seed(page, { tasks: [task('project', { title: 'Project old', kind: 'node', project: true }), task('child', { parentId: 'project' }), task('grandchild', { parentId: 'child', dueAt: Date.now() }), task('unrelated')] });
   await page.goto('/tasks');
   await page.getByRole('button', { name: '项目 Project old 菜单', exact: true }).click();
   await page.getByRole('button', { name: '编辑项目', exact: true }).click();
@@ -89,8 +89,8 @@ test('sidebar project menu edits without opening the project and deletes a subtr
 
 test('mind-map Ctrl/Cmd+A selects only visible real nodes, preserves text editing, and supports modifier multi-selection', async ({ page }) => {
   await seed(page, { settings: { completedDisplay: 'hidden' }, tasks: [task('project', { kind: 'node', project: true }),
-    task('alpha', { parentId: 'project', title: 'Alpha title', status: 'doing' }), task('beta', { parentId: 'project', title: 'Beta title' }),
-    task('complete', { parentId: 'project', status: 'done' }), task('other', { kind: 'node', project: true }), task('outside', { parentId: 'other' }),
+    task('alpha', { parentId: 'project', title: 'Alpha title', status: 'doing', dueAt: Date.now() }), task('beta', { parentId: 'project', title: 'Beta title', dueAt: Date.now() }),
+    task('complete', { parentId: 'project', status: 'done' }), task('other', { kind: 'node', project: true }), task('outside', { parentId: 'other', dueAt: Date.now() }),
   ] });
   await page.goto('/tasks?project=project&view=mindmap');
   await expect(node(page, 'alpha')).toBeVisible();
@@ -105,16 +105,14 @@ test('mind-map Ctrl/Cmd+A selects only visible real nodes, preserves text editin
   await node(page, 'alpha').getByText('Alpha title', { exact: true }).dblclick();
   const input = page.getByRole('textbox', { name: '导图节点标题', exact: true });
   await expect(input).toBeFocused();
-  await input.press('Control+a');
+  await input.press('ControlOrMeta+a');
   expect(await input.evaluate((element: HTMLInputElement) => element.selectionEnd! - element.selectionStart!)).toBe('Alpha title'.length);
   await expect(selected(page)).toHaveCount(1);
   await input.press('Enter');
   // Clear selection before explicitly adding two nodes with modifier-clicks.
   await page.getByRole('button', { name: '清除', exact: true }).click();
-  await page.keyboard.down('Control');
-  await node(page, 'alpha').getByText('Alpha title', { exact: true }).click();
-  await node(page, 'beta').getByText('Beta title', { exact: true }).click();
-  await page.keyboard.up('Control');
+  await node(page, 'alpha').getByText('Alpha title', { exact: true }).click({ modifiers: ['ControlOrMeta'] });
+  await node(page, 'beta').getByText('Beta title', { exact: true }).click({ modifiers: ['ControlOrMeta'] });
   await expect(selected(page)).toHaveCount(2);
   await page.getByRole('region', { name: '工作概览', exact: true }).getByRole('button', { name: /^当前工作/ }).click();
   await page.keyboard.press('Control+a');

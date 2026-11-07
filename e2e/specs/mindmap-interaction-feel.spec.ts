@@ -63,14 +63,14 @@ test('press selection preserves modifier toggles and selected batches while node
   const alpha = page.locator('.react-flow__node[data-id="alpha"]');
   const beta = page.locator('.react-flow__node[data-id="beta"]');
   await alpha.locator('[data-mind-title]').click();
-  await beta.locator('[data-mind-title]').click({ modifiers: ['Control'] });
+  await beta.locator('[data-mind-title]').click({ modifiers: ['ControlOrMeta'] });
   await expect(page.locator('.react-flow__node.selected')).toHaveCount(2);
   const box = (await alpha.locator('[data-mind-title]').boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
   await expect(page.locator('.react-flow__node.selected')).toHaveCount(2);
   await page.mouse.up();
-  await beta.locator('[data-mind-title]').click({ modifiers: ['Control'] });
+  await beta.locator('[data-mind-title]').click({ modifiers: ['ControlOrMeta'] });
   await expect(beta).not.toHaveClass(/selected/);
   await expect(alpha).toHaveClass(/selected/);
   await beta.getByRole('checkbox', { name: '完成', exact: true }).click();

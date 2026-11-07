@@ -79,10 +79,11 @@ test('native habits request permission explicitly, schedule without browser noti
   await expect.poll(() => page.evaluate(() => (window as unknown as { __nativeNotifications: NativeHarness }).__nativeNotifications.pending.some(item => item.extra.key.includes('2026-11-04') && new Date(item.schedule.at).getTime() > Date.now()))).toBe(true);
   expect(await page.evaluate(() => (window as unknown as { __nativeNotifications: NativeHarness }).__nativeNotifications.requests)).toBe(1);
   await dialog.getByRole('button', { name: '取消', exact: true }).click();
-  await page.evaluate(() => { history.pushState(null, '', '/tasks'); window.dispatchEvent(new PopStateEvent('popstate')); });
-  await expect(page).toHaveURL(/\/tasks$/);
+  await page.getByRole('navigation', { name: '工作导航', exact: true }).getByRole('link', { name: '当前任务', exact: true }).click();
+  await expect(page).toHaveURL(url => url.pathname === '/tasks' && url.searchParams.has('view'));
+  const tasksURL = page.url();
   await page.evaluate(() => (window as unknown as { __nativeNotifications: NativeHarness }).__nativeNotifications.tap(true));
-  await expect(page).toHaveURL(/\/tasks$/);
+  await expect(page).toHaveURL(tasksURL);
   await page.evaluate(() => (window as unknown as { __nativeNotifications: NativeHarness }).__nativeNotifications.tap());
   await expect(page).toHaveURL(/\/habits\?habit=native-read$/);
   const row = page.locator('[data-habit-row="native-read"]');

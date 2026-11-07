@@ -7,7 +7,7 @@ const shortcuts = (page: Page) => page.getByRole('navigation', { name: '快捷�
 const globalRoot = (page: Page) => page.locator('.react-flow__node[data-id="__cortex_all__"]');
 async function seed(page: Page) {
   await page.goto('/settings');
-  await page.locator('input[type=file]').setInputFiles({ name: 'workspace.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ tasks: [task('project', { title: '真实项目', kind: 'node', project: true }), task('child', { parentId: 'project' })] })) });
+  await page.locator('input[type=file]').setInputFiles({ name: 'workspace.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ tasks: [task('project', { title: '真实项目', kind: 'node', project: true }), task('child', { parentId: 'project', dueAt: Date.now() })] })) });
   await expect(page.getByText(/已合并备份/)).toBeVisible();
   await page.goto('/tasks?view=mindmap&scope=all');
   await expect(globalRoot(page)).toBeVisible();

@@ -27,11 +27,13 @@ test('time and emphasis share one compact desktop row, no helper paragraph, acco
   expect(status.y).toBeGreaterThanOrEqual(settings.y); expect(status.y + status.height).toBeLessThanOrEqual(settings.y + settings.height);
   await page.screenshot({ path: testInfo.outputPath('compact-mindmap.png') });
   await page.setViewportSize({ width: 320, height: 740 });
+  await expect(time.locator('option[value="custom"]')).toHaveText('自选');
   await time.selectOption('custom');
-  await expect(page.getByLabel('区间开始日期', { exact: true })).toBeVisible();
+  const dateRange = page.getByRole('dialog', { name: '选择日期区间', exact: true });
+  await expect(dateRange.getByLabel('区间开始日期', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
-test('node width follows uncommitted typing, grows and wraps without breaking edges, and Escape discards the draft', async ({ page }, testInfo) => {
+test('node width follows uncommitted typing, grows and wraps without breaking edges, and Escape discards the draft', async ({ page, browserName }, testInfo) => {
   await seed(page);
   const card = node(page, 'group').locator('.mind-node');
   const width = () => card.evaluate(el => el.getBoundingClientRect().width);
@@ -55,11 +57,35 @@ test('node width follows uncommitted typing, grows and wraps without breaking ed
   await editor.fill('短'); await expect.poll(width).toBeLessThan(expanded);
   await editor.press('Escape'); await expect(node(page, 'group').locator('[data-mind-title]')).toHaveText('编辑');
   await node(page, 'group').locator('[data-mind-title]').dblclick();
-  const cdp = await page.context().newCDPSession(page);
-  await cdp.send('Input.imeSetComposition', { text: '中文输入法组合文本', selectionStart: 8, selectionEnd: 8 });
+  await expect(editor).toBeFocused();
+  await expect(editor).toHaveValue('编辑');
+  const composing = '中文输入法组合文本';
+  const committed = '实时扩展后的标题';
+  const cdp = browserName === 'chromium' ? await page.context().newCDPSession(page) : null;
+  if (cdp) {
+    await cdp.send('Input.imeSetComposition', {
+      text: composing,
+      selectionStart: composing.length,
+      selectionEnd: composing.length,
+      replacementStart: 0,
+      replacementEnd: '编辑'.length,
+    });
+  } else {
+    await editor.dispatchEvent('compositionstart');
+    await editor.fill(composing);
+    await editor.dispatchEvent('compositionupdate', { data: composing });
+  }
+  await expect(editor).toHaveValue(composing);
   await expect(editor).toBeFocused(); await expect.poll(width).toBeGreaterThan(original);
   await editor.dispatchEvent('keydown', { key: 'Enter', code: 'Enter', isComposing: true, keyCode: 229 });
   await expect(editor).toBeVisible();
-  await cdp.send('Input.insertText', { text: '实时扩展后的标题' }); await cdp.detach();
-  await editor.press('Enter'); await expect(node(page, 'group').locator('[data-mind-title]')).toHaveText('实时扩展后的标题');
+  if (cdp) {
+    await cdp.send('Input.insertText', { text: committed });
+    await cdp.detach();
+  } else {
+    await editor.fill(committed);
+    await editor.dispatchEvent('compositionend', { data: committed });
+  }
+  await expect(editor).toHaveValue(committed);
+  await editor.press('Enter'); await expect(node(page, 'group').locator('[data-mind-title]')).toHaveText(committed);
 });

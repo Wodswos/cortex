@@ -89,6 +89,7 @@ test('morning progress stops the first reminder and the evening slot has its own
   await page.clock.install({ time: new Date('2026-11-04T07:59:00+08:00') });
   await seed(page, { habits: [habit('twice', { name: '早晚阅读', targetPerDay: 2, reminderTimes: ['08:00', '20:00'] })] });
   await page.goto('/habits');
+  await expect(row(page, 'twice')).toBeVisible();
   const reminder = page.getByRole('complementary', { name: '习惯提醒', exact: true });
   await expect(reminder).toHaveCount(0);
   await page.clock.fastForward(60000);
@@ -106,21 +107,26 @@ test('morning progress stops the first reminder and the evening slot has its own
   await page.clock.fastForward(24 * 3600000); await expect(reminder).toBeVisible();
 });
 
-test('Chinese habit creation, timed configuration and editing preserve identity, interval anchor and check-in history', async ({ page }) => {
+test('Chinese habit creation, timed configuration and editing preserve identity, interval anchor and check-in history', async ({ page, browserName }) => {
   await page.clock.setFixedTime(now);
   await page.goto('/habits');
   await page.getByRole('button', { name: '新习惯', exact: true }).click();
   let dialog = page.getByRole('dialog', { name: '新习惯', exact: true });
   const name = dialog.getByLabel('习惯名称', { exact: true });
-  const cdp = await page.context().newCDPSession(page);
-  await name.focus();
-  for (const text of ['y', 'yue', 'yuedu']) {
-    await cdp.send('Input.imeSetComposition', { text, selectionStart: text.length, selectionEnd: text.length });
-    await expect(name).toBeFocused(); await expect(name).toHaveValue(text);
+  if (browserName === 'chromium') {
+    const cdp = await page.context().newCDPSession(page);
+    await name.focus();
+    for (const text of ['y', 'yue', 'yuedu']) {
+      await cdp.send('Input.imeSetComposition', { text, selectionStart: text.length, selectionEnd: text.length });
+      await expect(name).toBeFocused(); await expect(name).toHaveValue(text);
+    }
+    await name.dispatchEvent('keydown', { key: 'Enter', code: 'Enter', isComposing: true, keyCode: 229 });
+    await expect(dialog).toBeVisible();
+    await cdp.send('Input.insertText', { text: '阅读中文书' });
+    await cdp.detach();
+  } else {
+    await name.fill('阅读中文书');
   }
-  await name.dispatchEvent('keydown', { key: 'Enter', code: 'Enter', isComposing: true, keyCode: 229 });
-  await expect(dialog).toBeVisible();
-  await cdp.send('Input.insertText', { text: '阅读中文书' }); await cdp.detach();
   await dialog.getByLabel('每日目标次数', { exact: true }).fill('2');
   await dialog.getByRole('combobox', { name: '习惯频率', exact: true }).selectOption('interval');
   await dialog.getByLabel('间隔天数', { exact: true }).fill('2');
@@ -187,6 +193,7 @@ test('global reminders catch the scheduled time, open the matching history and s
   await page.clock.install({ time: now });
   await seed(page, { habits: [habit('read', { name: '阅读', reminderAt: '20:00', targetPerDay: 2 }), habit('rest', { reminderAt: '20:00', cadence: { type: 'weekly', timesPerWeek: 1, days: [2] } })] });
   await page.goto('/tasks');
+  await expect(page.getByRole('heading', { name: '当前任务', exact: true })).toBeVisible();
   const reminder = page.getByRole('complementary', { name: '习惯提醒', exact: true });
   await expect(reminder).toHaveCount(0);
   await page.clock.fastForward(60000);
@@ -371,7 +378,7 @@ test('time sorting, keyboard reordering, cancellation and edits preserve a remem
   expect(data.habitLogs).toHaveLength(1); expect(data.habitLogs[0]).toMatchObject({ id: 'existing', count: 1 });
 });
 
-test('habit grips support mouse and touch dragging without opening history or overflowing the mobile header', async ({ page }) => {
+test('habit grips support mouse and touch dragging without opening history or overflowing the mobile header', async ({ page, browserName }) => {
   await seed(page, { habits: [habit('a', { name: '阅读' }), habit('b', { name: '步行' }), habit('c', { name: '练习' })] });
   await page.goto('/habits');
   const order = () => page.locator('[data-habit-row]').evaluateAll(elements => elements.map(element => element.getAttribute('data-habit-row')));
@@ -386,17 +393,19 @@ test('habit grips support mouse and touch dragging without opening history or ov
   await expect.poll(order).toEqual(['c', 'a', 'b']);
   await expect(page.locator('[data-habit-day]')).toHaveCount(0);
   await page.setViewportSize({ width: 320, height: 640 });
-  const cdp = await page.context().newCDPSession(page);
-  await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true });
-  const touchHandle = row(page, 'b').getByRole('button', { name: '拖动习惯 步行 排序', exact: true });
-  await expect(touchHandle).toHaveCSS('opacity', '1');
-  start = (await touchHandle.boundingBox())!; end = (await row(page, 'c').boundingBox())!;
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: start.x + start.width / 2, y: start.y + start.height / 2 }] });
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: end.x + 15, y: end.y + end.height / 2 + 8 }] });
-  await expect(touchHandle).toHaveAttribute('aria-pressed', 'true');
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: end.x + 15, y: end.y + end.height / 2 }] });
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-  await cdp.detach();
-  await expect.poll(order).toEqual(['b', 'c', 'a']);
+  if (browserName === 'chromium') {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true });
+    const touchHandle = row(page, 'b').getByRole('button', { name: '拖动习惯 步行 排序', exact: true });
+    await expect(touchHandle).toHaveCSS('opacity', '1');
+    start = (await touchHandle.boundingBox())!; end = (await row(page, 'c').boundingBox())!;
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: start.x + start.width / 2, y: start.y + start.height / 2 }] });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: end.x + 15, y: end.y + end.height / 2 + 8 }] });
+    await expect(touchHandle).toHaveAttribute('aria-pressed', 'true');
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: end.x + 15, y: end.y + end.height / 2 }] });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await cdp.detach();
+    await expect.poll(order).toEqual(['b', 'c', 'a']);
+  }
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });

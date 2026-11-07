@@ -28,7 +28,7 @@ test('every current task view excludes undated work while preserving dated-task 
   await expect(page.locator('[data-gantt-bar="scheduled"]')).toBeVisible();
   await expect(page.locator('[data-gantt-unscheduled]')).toHaveCount(0);
   await page.getByRole('tab', { name: '日历', exact: true }).click();
-  await expect(page.getByText('scheduled', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('calendar-month').getByText('scheduled', { exact: true })).toBeVisible();
   await page.getByRole('combobox', { name: '任务时间范围', exact: true }).selectOption('today');
   await expect(page.getByText('scheduled', { exact: true }).first()).toBeVisible();
   for (const title of ['backlog', 'loose_backlog']) await expect(page.getByText(title, { exact: true })).toHaveCount(0);
@@ -46,7 +46,7 @@ test('project backlog remains available and legacy current undated links return 
   await page.goto('/tasks?project=project&view=list&scope=undated');
   await expect(page.locator('[data-row]').getByText('backlog', { exact: true })).toBeVisible();
   await expect(page.locator('[data-row]').getByText('scheduled', { exact: true })).toHaveCount(0);
-  await page.goto('/tasks?project=project&view=gantt');
+  await page.goto('/tasks?project=project&view=gantt&scope=all');
   await expect(page.locator('[data-gantt-unscheduled]').getByRole('button', { name: 'backlog', exact: true })).toBeVisible();
 });
 

@@ -25,6 +25,10 @@ test('shared presets distinguish current work from week plans, clear stale const
   for (const id of ['week_plan', 'future', 'finished', 'foreign']) await expect(rows(page).getByText(id, { exact: true })).toHaveCount(0);
   await tab(page, '导图').click();
   await expect(page.locator('.react-flow__edge-path')).toHaveCount(7);
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+    await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+  });
   const positions = await page.locator('.react-flow__node').evaluateAll(nodes => nodes.map(node => ({ id: (node as HTMLElement).dataset.id, transform: (node as HTMLElement).style.transform })));
   await expect(page.locator('.react-flow__node[data-id="old_overdue"] [data-mind-muted]')).not.toHaveAttribute('data-mind-muted', 'true');
   await expect(page.locator('.react-flow__node[data-id="week_plan"] [data-mind-muted]')).toHaveAttribute('data-mind-muted', 'true');

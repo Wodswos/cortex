@@ -47,7 +47,7 @@ test('clear dates removes a remaining start date and its week signal, persists t
 test('batch clearing both endpoints is a single undoable action and preserves unrelated fields and tasks', async ({ page }) => {
   await seed(page, [task('alpha', { startAt: start, dueAt: due, notes: '保留笔记', status: 'doing', priority: 'P1' }), task('beta', { startAt: start, dueAt: null }), task('unrelated', { dueAt: due })]);
   await node(page, 'alpha').locator('[data-mind-title]').click();
-  await node(page, 'beta').locator('[data-mind-title]').click({ modifiers: ['Control'] });
+  await node(page, 'beta').locator('[data-mind-title]').click({ modifiers: ['ControlOrMeta'] });
   await expect(page.locator('.react-flow__node.selected')).toHaveCount(2);
   await clearDates(page, 'alpha');
   await expect(node(page, 'beta').getByText('本周安排', { exact: true })).toHaveCount(0);
