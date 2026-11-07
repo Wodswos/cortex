@@ -59,6 +59,9 @@ importers:
       lib0:
         specifier: ^0.2.99
         version: 0.2.117
+      swagger-ui-dist:
+        specifier: ^5.34.1
+        version: 5.34.1
       ws:
         specifier: ^8.18.0
         version: 8.21.3
@@ -1332,6 +1335,9 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@scarf/scarf@1.4.0':
+    resolution: {integrity: sha512-xxeapPiUXdZAE3che6f3xogoJPeZgig6omHEy1rIY5WVsB3H2BHNnZH+gHG6x91SCWyQCzWGsuL2Hh3ClO5/qQ==}
+
   '@tailwindcss/node@4.3.3':
     resolution: {integrity: sha512-/T8IKEsf9VTU6tLjgC7+sv2mOPtQxzE2jMw7u4Tt40Tx+QSZxpzh95/H6cMKoja9XuW7iMdLJYBB0o9G1CaAgg==}
 
@@ -2420,6 +2426,9 @@ packages:
 
   strip-literal@3.1.0:
     resolution: {integrity: sha512-8r3mkIM/2+PpjHoOtiAW8Rg3jJLHaV7xPwG+YRGrv6FP0wwk/toTpATxWYOW0BKdWwl82VT2tFYi5DlROa0Mxg==}
+
+  swagger-ui-dist@5.34.1:
+    resolution: {integrity: sha512-VSr8fXfI93obYaQicLJbLUKGRxDojj/SfRJDDLCioGTUBj4BK/Nj4eE9jCeCAnJxVLi7iS+08PbiZLyrQKBkJQ==}
 
   tailwind-merge@3.6.0:
     resolution: {integrity: sha512-uxL7qAVQriqRQPAyK3pj66VqskWqoZ37PW94jwOTwNfq/z9oyu1V+eqrZqtR2+fCiXdYOZe/Modt8GtvqNzu+w==}
@@ -3602,6 +3611,8 @@ snapshots:
   '@rollup/rollup-win32-x64-msvc@4.63.1':
     optional: true
 
+  '@scarf/scarf@1.4.0': {}
+
   '@tailwindcss/node@4.3.3':
     dependencies:
       '@jridgewell/remapping': 2.3.5
@@ -4631,6 +4642,10 @@ snapshots:
   strip-literal@3.1.0:
     dependencies:
       js-tokens: 9.0.1
+
+  swagger-ui-dist@5.34.1:
+    dependencies:
+      '@scarf/scarf': 1.4.0
 
   tailwind-merge@3.6.0: {}
 

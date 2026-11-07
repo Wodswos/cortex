@@ -5,7 +5,7 @@ import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, us
 import { SortableContext, useSortable, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { cn, Button, Dialog, DialogContent, EmptyState } from '@cortex/ui';
-import { dayKeyOf, habitStreak, heatmapWeeks, isDueOn, weekDone, logCountOn, heatmapDays, sortedHabits, habitOrderAfterMove, type Habit, type Cadence, type HabitLog, type Settings } from '@cortex/core';
+import { dayKeyOf, habitStreak, heatmapWeeks, isDueOn, weekDone, logCountOn, heatmapDays, habitReminderTimes, sortedHabits, habitOrderAfterMove, type Habit, type Cadence, type HabitLog, type Settings } from '@cortex/core';
 import { useCortex, useCortexData } from '@cortex/crdt';
 import { HabitDialog } from './HabitDialog';
 import { useHabitClock } from './clock';
@@ -80,6 +80,9 @@ function HabitRow({ habit, logs, today, now, open, onToggle, onEdit, onDelete }:
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: habit.id });
   const count = logCountOn(logs, habit.id, today), target = habit.targetPerDay ?? 1;
   const done = count >= target;
+  const progress = Math.min(1, count / target);
+  const reminderTimes = habitReminderTimes(habit);
+  const timeLabel = reminderTimes.join('、');
   const date = new Date(now);
   const streak = useMemo(() => habitStreak(habit, logs, new Date(`${today}T12:00:00`)), [habit, logs, today]);
   const flexible = habit.cadence.type === 'weekly' && !habit.cadence.days?.length;
@@ -89,11 +92,14 @@ function HabitRow({ habit, logs, today, now, open, onToggle, onEdit, onDelete }:
   return <section ref={setNodeRef} id={`habit-${habit.id}`} data-habit-row={habit.id} style={{ transform: CSS.Transform.toString(transform), transition }} className={cn('habit-row min-w-0', isDragging && 'relative z-10 bg-[var(--background)] shadow-sm')}>
     <div className="flex min-h-14 items-center gap-2 sm:gap-3">
       <button ref={setActivatorNodeRef} {...attributes} {...listeners} aria-label={`拖动习惯 ${habit.name} 排序`} title="拖动排序，调整后切换为手动排序" className="habit-drag-handle grid h-8 w-5 shrink-0 touch-none place-items-center rounded text-muted/50 hover:text-foreground focus-visible:opacity-100"><GripVertical size={14} /></button>
-      <button aria-label={done ? `撤销 ${habit.name} 一次打卡` : `为 ${habit.name} 打卡`} aria-pressed={done} title={done ? '撤销一次打卡' : '打卡 +1'} onClick={() => checkIn(done ? -1 : 1)} className={cn('grid h-8 w-8 shrink-0 place-items-center rounded-lg border outline-offset-2 transition-colors', done ? 'text-white' : 'border-[var(--border-strong)] text-muted hover:border-[var(--accent-solid)]')} style={done ? { background: habit.color, borderColor: habit.color } : undefined}><Check size={16} strokeWidth={done ? 2.2 : 1.5} className={done ? '' : 'opacity-35'} /></button>
+      <button aria-label={done ? `撤销 ${habit.name} 一次打卡` : `为 ${habit.name} 打卡`} aria-description={`今日已完成 ${count}/${target} 次`} aria-pressed={done} title={`${count}/${target} · ${done ? '撤销一次打卡' : '打卡 +1'}`} onClick={() => checkIn(done ? -1 : 1)} className={cn('relative isolate grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-lg border outline-offset-2 transition-colors', done ? 'text-white' : 'text-muted hover:border-[var(--accent-solid)]')} style={{ borderColor: progress > 0 ? habit.color : 'var(--border-strong)', background: progress > 0 ? `color-mix(in srgb, ${habit.color} 8%, var(--background))` : undefined }}>
+        <span aria-hidden="true" data-habit-fill className="pointer-events-none absolute inset-x-0 bottom-0 -z-10 transition-[height] duration-150 motion-reduce:transition-none" style={{ height: `${progress * 100}%`, background: habit.color }} />
+        <Check aria-hidden="true" size={16} strokeWidth={done ? 2.2 : 1.5} className={done ? '' : 'opacity-25'} />
+      </button>
       <button aria-label={`${habit.name}的打卡记录`} aria-expanded={open} aria-controls={open ? contentId : undefined} title={`${habit.name} · ${cadenceLabel(habit.cadence)}`} onClick={onToggle} className="flex min-w-0 flex-1 items-center gap-2 py-4 text-left outline-offset-2 sm:gap-4">
         <span className="min-w-0 flex-1 truncate text-sm font-medium">{habit.name}</span>
         <span className="hidden shrink-0 text-xs text-muted sm:inline">{cadenceLabel(habit.cadence)}</span>
-        {habit.reminderAt && <span aria-label={`打卡时间 ${habit.reminderAt}${habit.reminderEnabled !== false ? '，提醒已开启' : ''}`} className="flex shrink-0 items-center gap-1 text-xs tabular-nums text-muted">{habit.reminderEnabled !== false ? <Bell size={12} /> : <Clock size={12} />}{habit.reminderAt}</span>}
+        {reminderTimes.length > 0 && <span aria-label={`打卡时间 ${timeLabel}${habit.reminderEnabled !== false ? '，提醒已开启' : ''}`} title={timeLabel} className="flex shrink-0 items-center gap-1 text-xs tabular-nums text-muted">{habit.reminderEnabled !== false ? <Bell size={12} /> : <Clock size={12} />}<span>{reminderTimes[0]}</span>{reminderTimes.length > 1 && <><span className="hidden sm:inline"> / {reminderTimes[1]}{reminderTimes.length > 2 && ` +${reminderTimes.length - 2}`}</span><span className="sm:hidden">+{reminderTimes.length - 1}</span></>}</span>}
         {streak > 0 && <span title={`连续达标 ${streak}${flexible ? '周' : '天'}`} className="hidden shrink-0 items-center gap-1 text-xs tabular-nums text-muted md:flex"><Flame size={12} />{streak}</span>}
         <ChevronDown size={13} className={cn('shrink-0 text-muted transition-transform duration-100', open && 'rotate-180')} />
       </button>
@@ -101,7 +107,7 @@ function HabitRow({ habit, logs, today, now, open, onToggle, onEdit, onDelete }:
       <button aria-label={`编辑习惯 ${habit.name}`} title="编辑习惯" onClick={onEdit} className="grid h-8 w-7 shrink-0 place-items-center rounded-md text-muted hover:bg-[var(--surface)] hover:text-foreground"><Pencil size={14} /></button>
     </div>
     {open && <div id={contentId} role="region" aria-label={`${habit.name}打卡详情`} className="mb-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 sm:p-4">
-      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted"><span>{cadenceLabel(habit.cadence)}{habit.reminderAt ? ` · ${habit.reminderAt}` : ' · 未设置时间'}</span>{flexible ? <span>本周 {weekDone(habit, logs, date)}/{habit.cadence.type === 'weekly' ? habit.cadence.timesPerWeek : 0} 次</span> : !due && <span>今天无需打卡，可自由补充记录</span>}</div>
+      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted"><span>{cadenceLabel(habit.cadence)}{reminderTimes.length ? ` · ${timeLabel}` : ' · 未设置时间'}</span>{flexible ? <span>本周 {weekDone(habit, logs, date)}/{habit.cadence.type === 'weekly' ? habit.cadence.timesPerWeek : 0} 次</span> : !due && <span>今天无需打卡，可自由补充记录</span>}</div>
       <HabitHistory habit={habit} logs={logs} today={today} />
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted"><span>连续达标 {streak} {flexible ? '周' : '天'}</span>{count > 0 && <button onClick={() => checkIn(-1)} className="inline-flex items-center gap-1 hover:text-foreground"><Minus size={12} />撤销一次打卡</button>}<button onClick={onDelete} className="ml-auto inline-flex items-center gap-1 hover:text-[var(--danger)]"><Trash2 size={12} />删除习惯</button></div>
     </div>}

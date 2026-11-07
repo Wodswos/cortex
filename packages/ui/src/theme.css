@@ -440,6 +440,11 @@ body::before {
   color: white;
 }
 .calendar-month {
+  --calendar-date-size: 18px;
+  --calendar-date-gap: 2px;
+  --calendar-entry-height: 18px;
+  --calendar-entry-gap: 0px;
+  --calendar-more-height: 18px;
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   grid-template-rows: repeat(6, minmax(94px, 1fr));
@@ -447,24 +452,36 @@ body::before {
   flex: 1;
 }
 .calendar-cell {
+  min-height: 0;
   min-width: 0;
+  overflow: hidden;
   border-right: 1px solid var(--calendar-grid);
   border-bottom: 1px solid var(--calendar-grid);
-  padding: 6px;
+  padding: 4px;
 }
 .calendar-cell:nth-child(7n) {
   border-right: 0;
+}
+.calendar-date {
+  width: var(--calendar-date-size);
+  height: var(--calendar-date-size);
+  margin-bottom: var(--calendar-date-gap);
+}
+.calendar-more {
+  height: var(--calendar-more-height);
 }
 .calendar-item {
   display: flex;
   align-items: center;
   gap: 5px;
   width: 100%;
-  min-height: 24px;
-  margin-top: 2px;
-  padding: 3px 5px;
+  min-height: var(--calendar-entry-height);
+  height: var(--calendar-entry-height);
+  margin-top: var(--calendar-entry-gap);
+  padding: 1px 4px;
   border-radius: 4px;
   font-size: 11px;
+  line-height: 16px;
   text-align: left;
 }
 .calendar-item:hover {
@@ -480,7 +497,7 @@ body::before {
   }
   .calendar-item {
     font-size: 10px;
-    padding: 3px 1px;
+    padding: 1px;
   }
 }
 @media (pointer: coarse) {

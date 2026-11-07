@@ -20,9 +20,9 @@ export function periodOfReview(review: Review): ReviewPeriod {
 }
 
 /** Current task facts, never inferred from updatedAt. Finalizing stores an immutable snapshot. */
-export function reviewFacts(data: CortexData, period: ReviewPeriod, now = Date.now()): ReviewFacts {
-  const start = dateFromDayKey(period.start).getTime();
-  const end = Math.min(dateFromDayKey(period.end).getTime(), now);
+export function reviewFacts(data: CortexData, period: ReviewPeriod, now = Date.now(), bounds?: { start: number; end: number }): ReviewFacts {
+  const start = bounds?.start ?? dateFromDayKey(period.start).getTime();
+  const end = Math.min(bounds?.end ?? dateFromDayKey(period.end).getTime(), now);
   const byId = new Map(data.tasks.map(task => [task.id, task]));
   const projectOf = (task: Task) => ancestorsOf(task.id, byId).find(isProject);
   const fact = (task: Task) => ({ id: task.id, title: task.title, project: projectOf(task)?.title ?? '未归项目' });
@@ -32,7 +32,7 @@ export function reviewFacts(data: CortexData, period: ReviewPeriod, now = Date.n
     .sort((a, b) => (a.completedAt ?? 0) - (b.completedAt ?? 0));
   // An uncompleted task scheduled in this period is a candidate for reflection, not a historical claim.
   const pending = live.filter(task => !isStructural(task) && task.status !== 'done' && task.status !== 'inbox'
-    && task.dueAt != null && task.dueAt >= start && task.dueAt < Math.min(dateFromDayKey(period.end).getTime(), now))
+    && task.dueAt != null && task.dueAt >= start && task.dueAt < end)
     .sort((a, b) => (a.dueAt ?? 0) - (b.dueAt ?? 0));
   let focusMin = 0;
   for (const session of data.sessions) {

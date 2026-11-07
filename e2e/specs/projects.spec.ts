@@ -118,7 +118,7 @@ test('all five project views stay in their project, show full task branches by d
   await expect(page.getByText('B foreign action', { exact: true })).toHaveCount(0);
   await expect(page.getByLabel('项目进度', { exact: true })).toHaveText('1/4');
   await views(page).getByRole('tab', { name: '导图', exact: true }).click();
-  await expect(page.getByRole('region', { name: '工作概览', exact: true }).getByRole('button', { name: '全图', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('region', { name: '工作概览', exact: true }).getByRole('button', { name: '全部', exact: true })).toHaveAttribute('aria-pressed', 'true');
   for (const id of ['scope_a', 'a_future', 'a_unplanned', 'a_done']) await expect(page.locator(`.react-flow__node[data-id="${id}"]`)).toBeVisible();
   await expect(page.locator('.react-flow__node[data-id="scope_b"]')).toHaveCount(0);
   await views(page).getByRole('tab', { name: '四象限', exact: true }).click();

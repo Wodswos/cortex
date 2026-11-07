@@ -27,6 +27,7 @@ import {
   validateCortexData,
   validateSavedViews,
   validateHabitConfig,
+  habitReminderTimes,
   validateHabitOrder,
   CortexSnapshot,
   Review,
@@ -305,13 +306,14 @@ export class CortexStore {
     return this.getData().reviews.find(review => review.id === id)!;
   }
 
-  completeReview(period: ReviewPeriod): Review {
+  completeReview(period: ReviewPeriod, bounds?: { start: number; end: number }): Review {
     if (!validReviewPeriod(period)) throw new Error('无效的复盘日期');
+    if (bounds && (!Number.isFinite(bounds.start) || !Number.isFinite(bounds.end) || bounds.end <= bounds.start)) throw new Error('无效的复盘时间范围');
     const id = reviewId(period);
     const review = this.getData().reviews.find(item => item.id === id);
     if (!review || ![review.highlights, review.friction, review.resolution, review.nextSteps].some(value => value.trim())) throw new Error('写下一点收获、反思、解决办法或下一步，再完成复盘');
     if (review.periodEnd !== period.end) throw new Error('复盘周期已经变化，请重新打开这份复盘');
-    const timestamp = now(), facts = reviewFacts(this.getData(), period, timestamp);
+    const timestamp = now(), facts = reviewFacts(this.getData(), period, timestamp, bounds);
     this.docs.root.transact(() => {
       const fields = this.docs.root.getMap('reviewFields');
       fields.set(`${id}/facts`, facts);
@@ -668,9 +670,10 @@ export class CortexStore {
       id: newId(),
       name: patch.name,
       icon: patch.icon ?? 'Flame',
-      color: patch.color ?? '#22d3ee',
+      color: patch.color ?? '#6b80ae',
       cadence: patch.cadence ?? { type: 'daily' },
-      reminderAt: patch.reminderAt,
+      reminderAt: habitReminderTimes(patch)[0] ?? '',
+      reminderTimes: habitReminderTimes(patch),
       reminderEnabled: patch.reminderEnabled,
       linkedTaskTemplateId: patch.linkedTaskTemplateId ?? null,
       targetPerDay: patch.targetPerDay ?? 1,
@@ -687,7 +690,8 @@ export class CortexStore {
     validateHabitConfig(patch);
     const cur = this.get<Habit>('habits', id);
     if (!cur) return;
-    this.patchEntity('habits', id, patch);
+    const times = patch.reminderTimes !== undefined || patch.reminderAt !== undefined ? habitReminderTimes(patch) : null;
+    this.patchEntity('habits', id, times ? { ...patch, reminderTimes: times, reminderAt: times[0] ?? '' } : patch);
   }
 
   deleteHabit(id: string): void {

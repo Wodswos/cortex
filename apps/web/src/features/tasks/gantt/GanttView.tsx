@@ -169,7 +169,7 @@ export function GanttView() {
     // 1) 与窗口重叠的任务集合(只认显式日期)
     const overlap = new Set<string>();
     for (const t of tasks) {
-      if (!hasDates(t) || isStructural(t) || hiddenDone?.has(t.id)) continue; // 结构节点无排期,不产生条
+      if (!hasDates(t) || isStructural(t) || hiddenDone?.has(t.id) || !data.matchingTaskIds.has(t.id)) continue;
       const r = taskRange(t);
       if (r.start < winEndTime && r.end >= winStartTime) overlap.add(t.id);
     }
@@ -188,7 +188,7 @@ export function GanttView() {
     const out: Row[] = [];
     const walk = (t: Task, depth: number, groupBase: number) => {
       if (visible.has(t.id)) {
-        const dated = hasDates(t) && !isStructural(t);
+        const dated = hasDates(t) && !isStructural(t) && data.matchingTaskIds.has(t.id);
         const r = dated ? taskRange(t) : { start: 0, end: 0 };
         out.push({ task: t, depth, dated, start: r.start, end: r.end, groupStart: out.length === groupBase });
       }
@@ -196,14 +196,15 @@ export function GanttView() {
         for (const c of childrenMap.get(t.id) ?? []) walk(c, visible.has(t.id) ? depth + 1 : depth, groupBase);
       }
     };
-    for (const root of childrenMap.get(projectId) ?? []) walk(root, 0, out.length);
+    const roots = projectId ? childrenMap.get(projectId) ?? [] : tasks.filter(task => !task.parentId || !byId.has(task.parentId));
+    for (const root of roots) walk(root, 0, out.length);
     return out;
-  }, [tasks, childrenMap, byId, projectId, hiddenDone, winStartTime, winEndTime, collapsed]);
+  }, [tasks, childrenMap, byId, projectId, hiddenDone, winStartTime, winEndTime, collapsed, data.matchingTaskIds]);
 
   /** 未排期任务(无开始/截止):从底部坞拖到图上某一天即完成排期 */
   const unscheduled = useMemo(
-    () => tasks.filter((t) => !hasDates(t) && !isStructural(t) && t.status !== 'done' && t.status !== 'archived').slice(0, 12),
-    [tasks],
+    () => tasks.filter((t) => !hasDates(t) && !isStructural(t) && t.status !== 'done' && t.status !== 'archived' && data.matchingTaskIds.has(t.id)).slice(0, 12),
+    [tasks, data.matchingTaskIds],
   );
 
   const days = winDays;

@@ -12,6 +12,7 @@ import { setupSync } from './sync';
 import { setupTmux, sshRun, SESSION_RE } from './tmux';
 import { Connections, parseSshHost, shellQuote, sshCredentialError } from './connections';
 import { hashPassword, verifyPassword, RateLimit, originAllowed, upgradeUrl, type WsIdentity } from './security';
+import { setupRestApi } from './rest';
 
 const PORT = Number(process.env.PORT ?? 30090);
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -38,7 +39,7 @@ app.use('/api/*', async (c, next) => {
   const req = incoming(c);
   if (req && !originAllowed(req.headers)) return c.json({ error: '请求来源不受信任' }, 403);
   const expected = c.req.header('X-Cortex-User');
-  if (expected && !['/api/auth/login', '/api/auth/register', '/api/auth/status', '/api/auth/me'].includes(c.req.path) && currentUser(c) !== expected) {
+  if (expected && !c.req.path.startsWith('/api/v1/') && !['/api/auth/login', '/api/auth/register', '/api/auth/status', '/api/auth/me'].includes(c.req.path) && currentUser(c) !== expected) {
     return c.json({ error: '账号已切换,请重新载入', code: 'identity_changed' }, 409);
   }
   await next();
@@ -191,6 +192,7 @@ app.post('/api/tmux/:action', async (c) => {
   if (action === 'windows') return c.json({ windows: result.stdout.split('\n').filter(Boolean).map((line) => { const [id, index, name, active] = line.split('|'); return { id, index: Number(index), name: name ?? '', active: active === '1' }; }) });
   return c.json({ ok: true });
 });
+setupRestApi(app, db, () => sync, currentUser, HERE);
 app.get('/healthz', (c) => c.json({ ok: true, uptime: process.uptime() }));
 if (existsSync(PUBLIC_DIR)) {
   app.use('/*', serveStatic({ root: relative(process.cwd(), PUBLIC_DIR) || '.' }));

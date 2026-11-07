@@ -72,9 +72,9 @@ test('current workspace preserves the same custom window across its five views a
   await range(page).selectOption('all');
   await expect(rows.getByText('outside', { exact: true })).toBeVisible();
   await view(page, '甘特图').click();
-  await expect(range(page)).toHaveValue('week');
+  await expect(range(page)).toHaveValue('all');
   await view(page, '列表').click();
-  await expect(range(page)).toHaveValue('week');
+  await expect(range(page)).toHaveValue('all');
   await page.setViewportSize({ width: 390, height: 844 });
   await range(page).selectOption('custom');
   await expect(dateField(page, '区间结束日期')).toBeVisible();

@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useEffect, useMemo } from 'react';
+import React, { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { Segmented, SegmentedList, SegmentedTrigger } from '@cortex/ui';
 import {
@@ -12,6 +12,7 @@ import { isTaskView, projectView, rememberProjectView, useProjectViewMemory } fr
 import { TaskWindowControls } from './TaskWindowControls';
 import { TASK_VIEWS } from './viewOptions';
 import { SaveViewButton } from './savedViews/SaveViewButton';
+import { MoreTaskFilters, TaskFilterControls } from './TaskFilterControls';
 const ListView = lazy(() => import('./list/ListView').then((module) => ({ default: module.ListView })));
 const MatrixView = lazy(() =>
   import('./matrix/MatrixView').then((module) => ({ default: module.MatrixView })),
@@ -37,7 +38,7 @@ export default function TasksPage() {
   const view = normalizeTaskView(requested) ?? (
     projectId ? projectView(memory, projectId) : scope === 'week' ? 'gantt' : 'list');
   useEffect(() => {
-    const needsTimeRange = (!projectId || !!saved) && ['gantt', 'timeline'].includes(view) && !['today', 'week', 'month', 'custom'].includes(scope ?? '');
+    const needsTimeRange = ['gantt', 'timeline'].includes(view) && !['today', 'week', 'month', 'custom', 'all', 'undated'].includes(scope ?? '');
     if (isTaskView(requested) && !needsTimeRange) return;
     setParams((previous) => {
       const next = new URLSearchParams(previous);
@@ -54,6 +55,7 @@ export default function TasksPage() {
   const title = saved?.name || project?.title || '当前任务';
   const display = data.settings.completedDisplay ?? 'inline-gray';
   const ui = useUI();
+  const [focusToolbar, setFocusToolbar] = useState<HTMLDivElement | null>(null);
 
   if (projectId && !project) return (
     <div className="space-y-3 p-6 text-sm text-muted">
@@ -76,10 +78,6 @@ export default function TasksPage() {
             const next = new URLSearchParams(window.location.search);
             next.set('view', v);
             if (projectId && !saved) {
-              next.delete('scope');
-              next.delete('from');
-              next.delete('to');
-              next.delete('mindFocus');
               next.delete('root');
             }
             setParams(next, { replace: true });
@@ -126,7 +124,11 @@ export default function TasksPage() {
           </Link>
         </div>
       </div>
-      <div className="shrink-0 border-b border-[var(--border)] px-5 py-2 lg:px-7"><TaskWindowControls temporal={['gantt', 'timeline'].includes(view)} /></div>
+      <div ref={setFocusToolbar} aria-label="任务筛选与强调" className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-[var(--border)] px-5 py-2 lg:px-7">
+        <TaskFilterControls />
+        <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2"><span className="shrink-0 text-[11px] text-muted">时间</span><TaskWindowControls temporal={['gantt', 'timeline'].includes(view)} /></div>
+        <MoreTaskFilters />
+      </div>
       <div className="min-h-0 flex-1">
         <Suspense
           fallback={
@@ -139,7 +141,7 @@ export default function TasksPage() {
           {view === 'timeline' && <CalendarView key={`timeline:${projectId ?? 'all'}`} />}
           {view === 'gantt' && <GanttView key={`gantt:${projectId ?? 'all'}`} />}
           {view === 'matrix' && <MatrixView key={`matrix:${projectId ?? 'all'}`} />}
-          {view === 'mindmap' && <MindMapView key={`mindmap:${projectId ?? 'all'}`} />}
+          {view === 'mindmap' && <MindMapView key={`mindmap:${projectId ?? 'all'}`} focusToolbar={focusToolbar} />}
         </Suspense>
       </div>
     </div>

@@ -9,6 +9,12 @@ const task = (id: string, patch: Partial<Task> = {}): Task => ({
 });
 
 describe('review calendar and facts', () => {
+  it('uses explicit caller-zone boundaries for Agent-generated review facts', () => {
+    const start = Date.parse('2026-11-03T16:00:00Z'), end = Date.parse('2026-11-04T16:00:00Z');
+    const data = { ...EMPTY_DATA, tasks: [task('local-morning', { status: 'done' as const, completedAt: start + 3600000 }), task('before', { status: 'done' as const, completedAt: start - 1 }), task('after', { status: 'done' as const, completedAt: end })] };
+    const facts = reviewFacts(data, { kind: 'daily', start: '2026-11-04', end: '2026-11-05' }, end, { start, end });
+    expect(facts.completed.map(task => task.id)).toEqual(['local-morning']);
+  });
   it('uses local calendar boundaries and the configured week start', () => {
     const date = new Date(2026, 9, 25, 23, 40);
     expect(reviewPeriod('daily', date)).toEqual({ kind: 'daily', start: '2026-10-25', end: '2026-10-26' });

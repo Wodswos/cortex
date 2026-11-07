@@ -48,7 +48,6 @@ import {
   workSignals,
   workProgress,
   taskContextIds,
-  WORK_FOCUS,
   type WorkFocus,
   type MindFont,
 } from '@cortex/core';
@@ -68,11 +67,13 @@ import { useMindGeometry } from './geometry';
 import { useTaskViewData } from '../useTaskViewData';
 import { useTaskWindow } from '../TaskWindowControls';
 import { windowDueAt } from '../taskWindow';
+import { readTaskFilters, workspaceTaskDefaults } from '../taskFilters';
+import { useAuth } from '@/app/auth';
 
 /** 「全部」视图的虚拟真根:所有顶层根任务连到同一个点上 */
-const virtualRootTask: Task = {
+const VIRTUAL_ROOT_TASK: Task = {
   id: VIRTUAL_ROOT_ID,
-  title: '全部任务',
+  title: '我的工作空间',
   status: 'todo',
   parentId: null,
   order: 0,
@@ -113,15 +114,18 @@ const EDGE_TYPE = { curve: 'default', straight: 'straight', step: 'tree' } as co
 function MindMapInner({
   rootTaskId,
   focusMode,
-  onFocusChange,
+  focusToolbar,
 }: {
   rootTaskId: string | null;
   focusMode: WorkFocus;
-  onFocusChange: (mode: WorkFocus) => void;
+  focusToolbar?: HTMLElement | null;
 }) {
-  const data = useTaskViewData({ window: true });
+  const data = useTaskViewData({ window: true, context: true });
+  const [filterParams] = useSearchParams();
   const { range } = useTaskWindow();
   const store = useCortex();
+  const { user } = useAuth();
+  const virtualRootTask = useMemo(() => ({ ...VIRTUAL_ROOT_TASK, title: user?.username ?? '我的工作空间' }), [user?.username]);
   const collapsed = useUI((s) => s.collapsed);
   const openTaskMenu = useUI((s) => s.openTaskMenu);
   /** 连线形态(舒缓/直线/折线):存 settings 随账号同步,切换即重排应用到所有连线 */
@@ -230,19 +234,18 @@ function MindMapInner({
     () => workSignals(scopedTasks, data.events, now, data.settings.weekStartsOn),
     [scopedTasks, data.events, now, data.settings.weekStartsOn],
   );
-  const matches = focusMode === 'all' ? null : signals[focusMode];
-  const emptyCurrent = focusMode === 'current' && matches?.size === 0 && newTaskIds.length === 0;
+  const matches = data.hasTaskFilters ? data.matchingTaskIds : null;
   const contextIds = useMemo(
     () =>
-      matches && !emptyCurrent
+      matches
         ? taskContextIds(tasks, [...matches, ...newTaskIds, ...(selectedTask ? [selectedTask.id] : [])])
         : null,
-    [tasks, matches, emptyCurrent, newTaskIds, selectedTask],
+    [tasks, matches, newTaskIds, selectedTask],
   );
   const contextKey = contextIds ? [...contextIds].sort().join(',') : '*';
   const contextIdsRef = useRef(contextIds);
   contextIdsRef.current = contextIds;
-  useEffect(() => { setNewTaskIds([]); }, [focusMode]);
+  useEffect(() => { setNewTaskIds([]); }, [filterParams]);
   const fonts = useMindFonts(scopedTasks);
   const camera = useMapViewport(store.userId, rootTaskId, nodes, wrapperRef);
 
@@ -321,7 +324,7 @@ function MindMapInner({
   /** 布局输入:「全部」时以虚拟真根为唯一根,顶层任务全部连到它上面;单根时直接用该根 */
   const layoutRoots = useMemo(
     () => (rootTaskId ? rootChildren : [virtualRootTask]),
-    [rootTaskId, rootChildren],
+    [rootTaskId, rootChildren, virtualRootTask],
   );
   const layoutKids = useCallback(
     (id: string | null) => (id === VIRTUAL_ROOT_ID ? rootChildren : kidsOf(id)),
@@ -351,7 +354,9 @@ function MindMapInner({
       // Keep the last DOM measurement until ResizeObserver reports an actual size change.
       // Clearing it during a relayout also clears React Flow's connection anchors.
       const valid = previous?.measured?.width === metrics.width;
-      sizes.set(item.task.id, { width: metrics.width, height: valid && previous.measured?.height ? previous.measured.height : metrics.height });
+      sizes.set(item.task.id, editingIds.current.has(item.task.id) && previous?.measured?.width && previous.measured.height
+        ? { width: previous.measured.width, height: previous.measured.height }
+        : { width: metrics.width, height: valid && previous.measured?.height ? previous.measured.height : metrics.height });
       for (const child of layoutKids(item.task.id)) pending.push({ task: child, parent: item.task.id, depth: item.depth + 1, font });
     }
     const positions = layoutMindTree(layoutRoots, layoutKids, sizes);
@@ -551,8 +556,8 @@ function MindMapInner({
     const parent = byId.get(parentId);
     const created = store.createTask({
       title: '',
-      status: 'todo',
-      dueAt: windowDueAt(range),
+      ...workspaceTaskDefaults(new URLSearchParams(window.location.search)),
+      ...(windowDueAt(range) != null ? { dueAt: windowDueAt(range) } : {}),
       parentId,
       order: (siblings.at(-1)?.order ?? 0) + 1,
       important: parent?.important ?? false,
@@ -577,8 +582,8 @@ function MindMapInner({
     const next = siblings[idx + 1];
     const created = store.createTask({
       title: '',
-      status: 'todo',
-      dueAt: windowDueAt(range),
+      ...workspaceTaskDefaults(new URLSearchParams(window.location.search)),
+      ...(windowDueAt(range) != null ? { dueAt: windowDueAt(range) } : {}),
       parentId: task.parentId,
       order: newOrder(task.order, next?.order),
       important: task.important ?? false,
@@ -687,7 +692,7 @@ function MindMapInner({
       if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== 'a' || event.isComposing) return;
       const target = event.target as HTMLElement | null;
       if (target?.closest('input, textarea, select, [contenteditable], .xterm, [role="dialog"]')) return;
-      if (target !== document.body && target !== document.documentElement && !mapRegionRef.current?.contains(target)) return;
+      if (target !== document.body && target !== document.documentElement && !mapRegionRef.current?.contains(target) && !focusToolbar?.contains(target)) return;
       event.preventDefault();
       window.getSelection()?.removeAllRanges();
       setNodes((previous) => previous.map((node) => ({ ...node, selected: node.id !== VIRTUAL_ROOT_ID })));
@@ -697,7 +702,7 @@ function MindMapInner({
     };
     window.addEventListener('keydown', onSelectAll);
     return () => window.removeEventListener('keydown', onSelectAll);
-  }, [setNodes]);
+  }, [setNodes, focusToolbar]);
 
   // 删除/退格 = 软删选中节点(选中 = RF 节点标志位,重排时 applyLayout 自携带;
   // 输入框聚焦时放行,让退格正常编辑文字)
@@ -737,51 +742,6 @@ function MindMapInner({
 
   return (
     <div ref={mapRegionRef} className="flex min-h-0 flex-1 flex-col">
-      <div
-        role="region"
-        className="shrink-0 border-b border-[var(--border)] px-4 py-2 md:px-6"
-        aria-label="工作概览"
-      >
-        <div className="flex gap-1 overflow-x-auto pb-1 text-xs">
-          {(
-            [
-              ['current', '当前工作', signals.current.size, '进行中或本周有安排的未完成任务'],
-              ['doing', '进行中', signals.doing.size, '已明确标为进行中的任务'],
-              ['week', '本周', signals.week.size, '本周的开始/截止区间或关联日程'],
-              ['overdue', '逾期', signals.overdue.size, '截止时间已过且尚未完成'],
-              ['unscheduled', '重要未排期', signals.unscheduled.size, 'P0/P1 任务，尚无日期或未来日程'],
-              ['all', '全图', null, '查看所有任务与分支'],
-            ] as const
-          ).map(([mode, label, count, hint]) => (
-            <button
-              key={mode}
-              type="button"
-              aria-label={`${label}${count != null ? ` ${count}` : ''}`}
-              aria-pressed={focusMode === mode}
-              onClick={() => {
-                onFocusChange(mode);
-              }}
-              title={hint}
-              className={cn(
-                'shrink-0 rounded-md px-2.5 py-1.5 transition-colors',
-                focusMode === mode
-                  ? 'bg-[var(--selection)] font-medium text-[var(--accent-solid)]'
-                  : 'text-muted hover:bg-[var(--surface)] hover:text-foreground',
-              )}
-            >
-              {label}
-              {count != null && <span className="ml-1.5 tabular-nums">{count}</span>}
-            </button>
-          ))}
-        </div>
-        <p className="pt-1 text-[10px] text-muted">
-          {emptyCurrent
-            ? '暂无进行中或本周安排，先展示全图。'
-            : focusMode === 'all'
-              ? '查看全部分支；切换上方强调项，查看当前工作在全图中的位置。'
-              : matches?.size === 0 ? '没有符合条件的任务；保留全图供参考。' : '强调相关任务与上级路径，其他分支淡化；节点位置保持不变。'}
-        </p>
-      </div>
       <div
         ref={wrapperRef}
         tabIndex={0}
@@ -920,22 +880,14 @@ function SortableRootChip({ task, active, onSelect }: { task: Task; active: bool
   );
 }
 
-export function MindMapView() {
+export function MindMapView({ focusToolbar }: { focusToolbar?: HTMLElement | null }) {
   const data = useCortexData();
   const store = useCortex();
   const [params, setParams] = useSearchParams();
   const projectId = params.get('project');
   // 根任务进 URL(?root=<id>):刷新/分享/回退都保留当前视图
   const rootTaskId = params.get('root') ?? params.get('project');
-  const focusParam = params.get('mindFocus');
-  const focusMode: WorkFocus = WORK_FOCUS.includes(focusParam as WorkFocus)
-    ? (focusParam as WorkFocus)
-    : projectId || params.has('scope') ? 'all' : 'current';
-  const setFocusMode = (mode: WorkFocus) => {
-    const next = new URLSearchParams(params);
-    next.set('mindFocus', mode);
-    setParams(next, { replace: true });
-  };
+  const focusMode = readTaskFilters(params).focus;
   const setRootTaskId = (id: string | null) => {
     const next = new URLSearchParams(params);
     next.delete('project');
@@ -987,6 +939,7 @@ export function MindMapView() {
     <div className="flex h-full min-h-0 flex-col">
       {!projectId && <div className="relative z-10 flex shrink-0 flex-wrap items-center gap-1.5 border-b border-[var(--border)] px-4 py-2 md:px-6">
         <button
+          aria-label="显示全部项目"
           onClick={() => setRootTaskId(null)}
           className={cn(
             'rounded-full px-2.5 py-1 text-xs',
@@ -1063,7 +1016,7 @@ export function MindMapView() {
         </div>
       </div>}
       <ReactFlowProvider key={`${store.userId}:${rootTaskId ?? VIRTUAL_ROOT_ID}`}>
-        <MindMapInner rootTaskId={rootTaskId} focusMode={focusMode} onFocusChange={setFocusMode} />
+        <MindMapInner rootTaskId={rootTaskId} focusMode={focusMode} focusToolbar={focusToolbar} />
       </ReactFlowProvider>
     </div>
   );

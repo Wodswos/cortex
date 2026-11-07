@@ -12,6 +12,29 @@ const TIME_OPTIONS: { label: string; apply: (now: Date) => number | null }[] = [
   { label: '清除日期', apply: () => null },
 ];
 
+const itemCls =
+  'flex w-full cursor-pointer select-none items-center gap-2 rounded-lg px-2.5 py-2 text-sm outline-none transition-colors text-foreground hover:bg-[color-mix(in_srgb,var(--accent-from)_14%,transparent)] disabled:opacity-50';
+
+function MenuItem({ children, onSelect, danger, onHover, disabled = false }: {
+  disabled?: boolean;
+  children: React.ReactNode;
+  onSelect: (el: HTMLElement) => void;
+  danger?: boolean;
+  /** 悬停:有子菜单的条目借它弹级联面板,普通条目借它收起面板 */
+  onHover?: (el: HTMLElement) => void;
+}) {
+  return (
+    <button
+      disabled={disabled}
+      onClick={(e) => onSelect(e.currentTarget)}
+      onMouseEnter={(e) => onHover?.(e.currentTarget)}
+      className={cn(itemCls, danger && 'text-[var(--danger)] hover:bg-[var(--danger)]/10')}
+    >
+      {children}
+    </button>
+  );
+}
+
 export function TaskMenu() {
   const data = useCortexData();
   const store = useCortex();
@@ -123,25 +146,6 @@ export function TaskMenu() {
     ui.selectTask(created.id);
   };
 
-  const itemCls =
-    'flex w-full cursor-pointer select-none items-center gap-2 rounded-lg px-2.5 py-2 text-sm outline-none transition-colors text-foreground hover:bg-[color-mix(in_srgb,var(--accent-from)_14%,transparent)] data-[disabled]:opacity-50';
-
-  const MenuItem = ({ children, onSelect, danger, onHover }: {
-    children: React.ReactNode;
-    onSelect: (el: HTMLElement) => void;
-    danger?: boolean;
-    /** 悬停:有子菜单的条目借它弹级联面板,普通条目借它收起面板 */
-    onHover?: (el: HTMLElement) => void;
-  }) => (
-    <button
-      disabled={busy}
-      onClick={(e) => onSelect(e.currentTarget)}
-      onMouseEnter={(e) => onHover?.(e.currentTarget)}
-      className={cn(itemCls, danger && 'text-[var(--danger)] hover:bg-[var(--danger)]/10')}
-    >
-      {children}
-    </button>
-  );
 
   return (
     <div
@@ -158,13 +162,13 @@ export function TaskMenu() {
       >
         <div className="flex flex-col">
           <div className="truncate px-2.5 py-1.5 text-xs text-muted">{task.title || 'Untitled'}</div>
-          <MenuItem onHover={clearSub} onSelect={addChild}>
+          <MenuItem disabled={busy} onHover={clearSub} onSelect={addChild}>
             <Plus className="h-4 w-4 shrink-0" /> 创建子任务
           </MenuItem>
-          <MenuItem onHover={clearSub} onSelect={() => { close(); ui.selectTask(task.id); }}>
+          <MenuItem disabled={busy} onHover={clearSub} onSelect={() => { close(); ui.selectTask(task.id); }}>
             <Info className="h-4 w-4 shrink-0" /> {project ? '编辑项目' : '打开详情'}
           </MenuItem>
-          {!project && <MenuItem
+          {!project && <MenuItem disabled={busy}
             onHover={clearSub}
             onSelect={() => {
               // 以被右击的任务为锚:批量整批转成同一目标类型(setTaskKind 同类型时 no-op)
@@ -176,13 +180,13 @@ export function TaskMenu() {
             <Shapes className="h-4 w-4 shrink-0" />
             {structural ? '转为 TODO 任务' : task.parentId === null ? '转为项目' : '转为分组'}
           </MenuItem>}
-          {project && <MenuItem onHover={clearSub} onSelect={() => { void persistAction(() => store.setTaskStatus(task.id, 'archived')); }}>归档项目</MenuItem>}
+          {project && <MenuItem disabled={busy} onHover={clearSub} onSelect={() => { void persistAction(() => store.setTaskStatus(task.id, 'archived')); }}>归档项目</MenuItem>}
           {!structural && (
             <>
-              <MenuItem onHover={(el) => openSub('time', el)} onSelect={(el) => openSub('time', el)}>
+              <MenuItem disabled={busy} onHover={(el) => openSub('time', el)} onSelect={(el) => openSub('time', el)}>
                 设定时间 <ChevronRight className="ml-auto h-3.5 w-3.5 text-muted" />
               </MenuItem>
-              <MenuItem onHover={(el) => openSub('priority', el)} onSelect={(el) => openSub('priority', el)}>
+              <MenuItem disabled={busy} onHover={(el) => openSub('priority', el)} onSelect={(el) => openSub('priority', el)}>
                 优先级 <ChevronRight className="ml-auto h-3.5 w-3.5 text-muted" />
               </MenuItem>
             </>
@@ -195,16 +199,16 @@ export function TaskMenu() {
           {hasChildren && (
             <>
               <div className="my-1 h-px bg-[var(--border)]" />
-              <MenuItem onHover={clearSub} onSelect={() => { ui.collapseSubtree(task.id, childrenIds); close(); }}>
+              <MenuItem disabled={busy} onHover={clearSub} onSelect={() => { ui.collapseSubtree(task.id, childrenIds); close(); }}>
                 折叠全部子任务
               </MenuItem>
-              <MenuItem onHover={clearSub} onSelect={() => { ui.expandSubtree(task.id, childrenIds); close(); }}>
+              <MenuItem disabled={busy} onHover={clearSub} onSelect={() => { ui.expandSubtree(task.id, childrenIds); close(); }}>
                 展开全部子任务
               </MenuItem>
             </>
           )}
           <div className="my-1 h-px bg-[var(--border)]" />
-          <MenuItem danger onHover={clearSub} onSelect={() => {
+          <MenuItem disabled={busy} danger onHover={clearSub} onSelect={() => {
             if (data.tasks.some((task) => ids.includes(task.id) && isProject(task))) ui.requestTaskDeletion(store.userId, ids);
             else void persistAction(() => { ids.forEach((id) => store.softDeleteTask(id)); });
           }}>
@@ -229,12 +233,19 @@ export function TaskMenu() {
               {/* 子菜单里的选项不挂 onHover:悬停选项不收起子菜单(级联菜单语义);
                   曾因 clearSub 在 mouseenter 触发卸载面板,click 落在被移除节点上被吞 */}
               {TIME_OPTIONS.map((o) => (
-                <MenuItem key={o.label} onSelect={() => { const v = o.apply(new Date()); mutate({ dueAt: v }); close(); }}>
+                <MenuItem disabled={busy} key={o.label} onSelect={() => {
+                  const value = o.apply(new Date());
+                  void persistAction(() => {
+                    store.docs.tasks.transact(() => mutate(value === null
+                      ? { startAt: null, dueAt: null }
+                      : { dueAt: value }));
+                  });
+                }}>
                   {o.label}
                 </MenuItem>
               ))}
               <div className="my-1 h-px bg-[var(--border)]" />
-              <MenuItem onSelect={() => { close(); ui.selectTask(task.id); }}>
+              <MenuItem disabled={busy} onSelect={() => { close(); ui.selectTask(task.id); }}>
                 <CircleDot className="h-4 w-4 shrink-0 text-muted" /> 自定义… <span className="text-xs text-muted/60">打开详情</span>
               </MenuItem>
             </div>
@@ -242,12 +253,12 @@ export function TaskMenu() {
           {sub === 'priority' && (
             <div className="flex flex-col">
               {PRIORITY_ORDER.map((p) => (
-                <MenuItem key={p} onSelect={() => { ids.forEach((id) => store.setTaskPriority(id, p as Priority)); close(); }}>
+                <MenuItem disabled={busy} key={p} onSelect={() => { ids.forEach((id) => store.setTaskPriority(id, p as Priority)); close(); }}>
                   {PRIORITY_META[p].label}
                 </MenuItem>
               ))}
               <div className="my-1 h-px bg-[var(--border)]" />
-              <MenuItem onSelect={() => { ids.forEach((id) => store.setTaskPriority(id, 'P3')); close(); }}>
+              <MenuItem disabled={busy} onSelect={() => { ids.forEach((id) => store.setTaskPriority(id, 'P3')); close(); }}>
                 清除优先级(P3)
               </MenuItem>
             </div>

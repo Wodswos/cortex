@@ -1,3 +1,4 @@
+import { workspaceTaskDefaults } from '../taskFilters';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import {
@@ -21,7 +22,6 @@ import { ChevronRight, Play, Plus, MoreHorizontal, Folder, GripVertical } from '
 import { cn, EmptyState, Badge } from '@cortex/ui';
 import {
   Task,
-  TaskFilter,
   activeTasks,
   buildChildrenMap,
   groupRoots,
@@ -35,7 +35,6 @@ import {
   PRIORITY_ORDER,
   isStructural,
   isProject,
-  matchFilter,
   descendantsOf,
   priorityOf,
   workProgress,
@@ -55,14 +54,8 @@ import { TaskInspector } from '@/shared/TaskInspector';
 import { isComposing } from '@/shared/ime';
 import { projectTaskDrop, TASK_INDENT, type TaskDrop } from './drop';
 import { useTaskWindow } from '../TaskWindowControls';
-import { tasksInWindow, windowDueAt } from '../taskWindow';
-
-/** 过滤 chips */
-const FILTERS: { key: TaskFilter['kind']; label: string }[] = [
-  { key: 'all', label: '全部' },
-  { key: 'high', label: '高优先级' },
-  { key: 'unscheduled', label: '无日期' },
-];
+import { windowDueAt } from '../taskWindow';
+import { useTaskViewData } from '../useTaskViewData';
 
 /** Keep the compact preview beside the pointer, even when dragging a wide title. */
 const previewBesidePointer: Modifier = ({ activatorEvent, activeNodeRect, overlayNodeRect, windowRect, transform }) => {
@@ -81,6 +74,7 @@ const previewBesidePointer: Modifier = ({ activatorEvent, activeNodeRect, overla
 
 export function ListView() {
   const data = useCortexData();
+  const viewData = useTaskViewData({ window: true });
   const store = useCortex();
   const ui = useUI();
   const [now] = useState(() => new Date());
@@ -120,10 +114,10 @@ export function ListView() {
   const captureRef = useRef<HTMLInputElement>(null);
   const composing = useRef(false);
   useEffect(() => {
-    ui.setFilter({ kind: 'all' });
     setSelectedIds([]);
-  }, [scope, projectId, rangeStart, rangeDays]);
-  const filter = ui.filter;
+    setAnchorId(null);
+    setPickAttach(false);
+  }, [params, rangeStart, rangeDays]);
   const showDone = (data.settings.completedDisplay ?? 'inline-gray') !== 'hidden';
   const active = useMemo(() => activeTasks(data.tasks).filter((t) => t.status !== 'inbox'), [data.tasks]);
   const allChildren = useMemo(() => buildChildrenMap(active), [active]);
@@ -132,22 +126,7 @@ export function ListView() {
     () => activeDragId ? descendantsOf(activeDragId, allChildren).add(activeDragId) : new Set<string>(),
     [activeDragId, allChildren],
   );
-  const visibleTasks = useMemo(() => {
-    const projectIds = projectId ? descendantsOf(projectId, allChildren).add(projectId) : null;
-    const pool = tasksInWindow(active.filter((task) => !projectIds || projectIds.has(task.id)), { scope: rangeScope, start: rangeStart, days: rangeDays });
-    if (filter.kind === 'all') return pool;
-    const byId = new Map(pool.map((task) => [task.id, task]));
-    const keep = new Set<string>();
-    for (const task of pool) {
-      if (!matchFilter(task, filter, now)) continue;
-      let current: Task | undefined = task;
-      while (current && !keep.has(current.id)) {
-        keep.add(current.id);
-        current = current.parentId ? byId.get(current.parentId) : undefined;
-      }
-    }
-    return pool.filter((task) => keep.has(task.id));
-  }, [active, allChildren, projectId, rangeScope, rangeStart, rangeDays, filter, now]);
+  const visibleTasks = viewData.tasks;
   const childrenMap = useMemo(() => buildChildrenMap(visibleTasks), [visibleTasks]);
   const progressMap = useMemo(() => workProgress(active), [active]);
   // 隐藏模式:整棵子树都完成的行不再渲染(根级过滤在 groupRoots,子级在这里)
@@ -363,8 +342,8 @@ export function ListView() {
     const kids = childrenMap.get(parentId) ?? [];
     const created = store.createTask({
       title: '',
-      status: 'todo',
-      dueAt: windowDueAt(range),
+      ...workspaceTaskDefaults(new URLSearchParams(window.location.search)),
+      ...(windowDueAt(range) != null ? { dueAt: windowDueAt(range) } : {}),
       parentId,
       order: newOrder(kids.at(-1)?.order),
     });
@@ -441,10 +420,10 @@ export function ListView() {
     const siblings = allChildren.get(projectId) ?? [];
     store.createTask({
       title: newTitle.trim(),
-      status: 'todo',
+      ...workspaceTaskDefaults(new URLSearchParams(window.location.search)),
       parentId: projectId,
       order: newOrder(siblings.at(-1)?.order),
-      dueAt: windowDueAt(range),
+      ...(windowDueAt(range) != null ? { dueAt: windowDueAt(range) } : {}),
     });
     setNewTitle('');
     captureRef.current?.focus();
@@ -493,31 +472,7 @@ export function ListView() {
           <span role="status" aria-label="保存状态">
             {saveStatus}
           </span>
-          <select
-            aria-label="筛选任务"
-            value={filter.kind === 'tag' ? `tag:${filter.tagId}` : filter.kind}
-            onChange={(event) =>
-              ui.setFilter(
-                event.target.value.startsWith('tag:')
-                  ? { kind: 'tag', tagId: event.target.value.slice(4) }
-                  : { kind: event.target.value as TaskFilter['kind'] },
-              )
-            }
-            className="ml-auto bg-transparent text-xs outline-none"
-          >
-            {FILTERS.map((item) => (
-              <option key={item.key} value={item.key}>
-                {item.label}
-              </option>
-            ))}
-            {data.tags
-              .filter((tag) => !tag.deletedAt)
-              .map((tag) => (
-                <option key={tag.id} value={`tag:${tag.id}`}>
-                  #{tag.name}
-                </option>
-              ))}
-          </select>
+
         </div>
 
         {/* 列表 */}
@@ -773,8 +728,8 @@ function TaskRow({
       e.preventDefault();
       const created = store.createTask({
         title: '',
-        status: 'todo',
-        dueAt: newTaskDueAt,
+        ...workspaceTaskDefaults(new URLSearchParams(window.location.search)),
+        ...(newTaskDueAt != null ? { dueAt: newTaskDueAt } : {}),
         parentId: task.parentId,
         order: newOrder(task.order, siblings[idx + 1]?.order),
       });

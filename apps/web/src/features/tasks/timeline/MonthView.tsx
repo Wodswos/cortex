@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
-import { cn } from '@cortex/ui';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { X } from 'lucide-react';
+import { cn, Dropdown, DropdownContent, DropdownItem, DropdownTrigger } from '@cortex/ui';
 import { activeTasks, addDays, startOfWeek, dayKeyOf, WEEKDAY_ZH, isStructural, calendarDaysBetween } from '@cortex/core';
 import { useCortex } from '@cortex/crdt';
 import { useTaskViewData } from '../useTaskViewData';
@@ -16,13 +17,37 @@ export function MonthView({
   onDateChange: (d: Date) => void;
   onCreateTask?: (dueAt: number, event: React.MouseEvent) => void;
 }) {
-  const data = useTaskViewData();
+  const data = useTaskViewData({ ancestors: false });
   const store = useCortex();
   const selectTask = useUI((s) => s.selectTask);
   const [dropDay, setDropDay] = useState<string | null>(null);
   const [message, setMessage] = useState('');
+  const [expandedDay, setExpandedDay] = useState<string | null>(null);
+  const openingTask = useRef(false);
+  const grid = useRef<HTMLDivElement>(null);
+  const [capacity, setCapacity] = useState({ full: 3, overflow: 2 });
   const first = startOfWeek(new Date(date.getFullYear(), date.getMonth(), 1), data.settings.weekStartsOn);
   const firstKey = dayKeyOf(first);
+  useEffect(() => setExpandedDay(null), [firstKey]);
+  useLayoutEffect(() => {
+    const element = grid.current;
+    if (!element) return;
+    const measure = () => {
+      const cell = element.querySelector<HTMLElement>('[data-calendar-date]');
+      if (!cell) return;
+      const style = getComputedStyle(cell);
+      const metric = (name: string) => parseFloat(style.getPropertyValue(`--calendar-${name}`));
+      const available = cell.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom) - metric('date-size') - metric('date-gap');
+      const step = metric('entry-height') + metric('entry-gap');
+      const full = Math.max(0, Math.floor(available / step));
+      const overflow = Math.max(0, Math.floor((available - metric('more-height')) / step));
+      setCapacity(previous => previous.full === full && previous.overflow === overflow ? previous : { full, overflow });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   const days = useMemo(
     () => Array.from({ length: 42 }, (_, i) => addDays(new Date(`${firstKey}T00:00:00`), i)),
     [firstKey],
@@ -50,11 +75,11 @@ export function MonthView({
         task.status === 'archived' ||
         task.status === 'inbox' ||
         isStructural(task) ||
-        task.dueAt == null ||
+        task.dueAt == null && task.startAt == null ||
         (task.status === 'done' && data.settings.completedDisplay === 'hidden')
       )
         continue;
-      append(dayKeyOf(task.dueAt), {
+      append(dayKeyOf((task.dueAt ?? task.startAt)!), {
         id: task.id,
         type: 'task',
         title: task.title || '未命名任务',
@@ -78,8 +103,9 @@ export function MonthView({
       if (!Number.isFinite(delta) || !delta) return;
       if (payload.type === 'task') {
         const task = data.tasks.find((t) => t.id === payload.id);
-        if (!task || task.dueAt == null) return;
-        store.updateTask(task.id, { dueAt: addDays(task.dueAt, delta).getTime() });
+        if (!task) return;
+        if (task.dueAt != null) store.updateTask(task.id, { dueAt: addDays(task.dueAt, delta).getTime() });
+        else if (task.startAt != null) store.updateTask(task.id, { startAt: addDays(task.startAt, delta).getTime() });
       } else if (payload.type === 'event') {
         const item = data.events.find((e) => e.id === payload.id);
         if (!item) return;
@@ -100,11 +126,12 @@ export function MonthView({
           </div>
         ))}
       </div>
-      <div className="calendar-month">
+      <div ref={grid} className="calendar-month">
         {days.map((day) => {
           const key = dayKeyOf(day),
             today = key === dayKeyOf(new Date());
           const entries = items.get(key) ?? [];
+          const visibleCount = entries.length > capacity.full ? capacity.overflow : capacity.full;
           return (
             <div
               key={key}
@@ -133,7 +160,7 @@ export function MonthView({
                 aria-label={`${key}，查看日程`}
                 onClick={() => onDateChange(day)}
                 className={cn(
-                  'mb-1 grid h-6 w-6 place-items-center rounded-full text-xs',
+                  'calendar-date grid place-items-center rounded-full text-[11px]',
                   today
                     ? 'bg-[var(--accent-solid)] font-medium text-white'
                     : day.getMonth() !== date.getMonth()
@@ -143,7 +170,7 @@ export function MonthView({
               >
                 {day.getDate()}
               </button>
-              {entries.slice(0, 3).map((item) => (
+              {entries.slice(0, visibleCount).map((item) => (
                 <button
                   key={`${item.type}:${item.id}`}
                   draggable
@@ -177,10 +204,39 @@ export function MonthView({
                   <span className="truncate">{item.title}</span>
                 </button>
               ))}
-              {entries.length > 3 && (
-                <button onClick={() => onDateChange(day)} className="px-1 py-1 text-[10px] text-muted">
-                  还有 {entries.length - 3} 项
-                </button>
+              {entries.length > visibleCount && (
+                <Dropdown open={expandedDay === key} onOpenChange={open => { if (open) openingTask.current = false; setExpandedDay(open ? key : null); }}>
+                  <DropdownTrigger asChild>
+                    <button type="button" aria-label={`${key}，还有 ${entries.length - visibleCount} 项`} className="calendar-more max-w-full truncate rounded px-1 text-left text-[10px] text-muted hover:bg-[var(--selection)] hover:text-foreground">
+                      还有 {entries.length - visibleCount} 项
+                    </button>
+                  </DropdownTrigger>
+                  <DropdownContent
+                    aria-label={`${key} 的全部项目`}
+                    aria-labelledby={undefined}
+                    align="start"
+                    collisionPadding={12}
+                    className="flex max-h-[min(420px,var(--radix-dropdown-menu-content-available-height),calc(100dvh-24px))] w-[min(360px,calc(100vw-24px))] flex-col overflow-hidden p-0"
+                    onClick={event => event.stopPropagation()}
+                    onCloseAutoFocus={event => { if (openingTask.current) event.preventDefault(); openingTask.current = false; }}
+                  >
+                    <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-3 py-2.5">
+                      <span className="text-sm font-medium">{day.getMonth() + 1} 月 {day.getDate()} 日 · 周{WEEKDAY_ZH[(day.getDay() + 6) % 7]}</span>
+                      <span className="text-xs text-muted">共 {entries.length} 项</span>
+                      <button type="button" aria-label="关闭当日项目列表" onClick={() => setExpandedDay(null)} className="ml-auto rounded p-1 text-muted hover:bg-[var(--surface)] hover:text-foreground"><X size={14} /></button>
+                    </div>
+                    <div data-calendar-day-items className="min-h-0 overflow-y-auto overscroll-contain p-1.5">
+                      {entries.map(item => <DropdownItem key={`${item.type}:${item.id}`} textValue={item.title} aria-label={`${item.title} ${item.type === 'task' ? '任务' : '日程'}${item.done ? ' · 已完成' : ''}`} className="items-start gap-2 py-1.5" onSelect={() => {
+                        if (item.type === 'task') { openingTask.current = true; selectTask(item.id); }
+                        else onDateChange(day);
+                      }}>
+                        <span className={cn('mt-1.5 h-1.5 w-1.5 shrink-0', item.type === 'task' ? 'rounded-full' : 'rounded-sm')} style={{ background: item.done ? 'var(--muted-foreground)' : item.color }} />
+                        <span className={cn('min-w-0 flex-1 break-words text-[13px] leading-5', item.done && 'text-muted line-through')}>{item.title}</span>
+                        <span className="mt-0.5 shrink-0 text-[10px] leading-4 text-muted">{item.type === 'task' ? '任务' : '日程'}{item.done ? ' · 已完成' : ''}</span>
+                      </DropdownItem>)}
+                    </div>
+                  </DropdownContent>
+                </Dropdown>
               )}
             </div>
           );

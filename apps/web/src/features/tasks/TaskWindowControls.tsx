@@ -1,21 +1,28 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocation, useSearchParams } from 'react-router';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useCortexData } from '@cortex/crdt';
 import { addDays, calendarDaysBetween, dayKeyOf } from '@cortex/core';
 import { isCalendarMonth, isDatedWindow, MAX_WINDOW_DAYS, readTaskWindow, type WindowScope } from './taskWindow';
+import { workspaceCanvasWindow } from './taskFilters';
 
 export function useTaskWindow(temporal = false) {
   const [params, setParams] = useSearchParams();
-  const { settings } = useCortexData();
-  const [, setClock] = useState(0);
+  const location = useLocation();
+  const data = useCortexData();
+  const { settings } = data;
+  const [clock, setClock] = useState(0);
   useEffect(() => {
     const refresh = () => setClock((value) => value + 1);
     const timer = window.setInterval(refresh, 60_000);
     window.addEventListener('focus', refresh);
     return () => { clearInterval(timer); window.removeEventListener('focus', refresh); };
   }, []);
-  const range = readTaskWindow(params, new Date(), settings.weekStartsOn, temporal);
+  const now = useMemo(() => new Date(), [clock, location.key]);
+  const range = useMemo(() => {
+    const initial = readTaskWindow(params, now, settings.weekStartsOn, temporal);
+    return temporal ? workspaceCanvasWindow(data, params, now, initial) : initial;
+  }, [params, data, temporal, now]);
   const setRange = useCallback((start: number, days: number) => {
     if (window.location.pathname !== '/tasks') return;
     // Suspense can retain the previous view while the next one loads. Its render-time
@@ -34,12 +41,13 @@ export function useTaskWindow(temporal = false) {
     next.delete('from'); next.delete('to');
     setParams(next, { replace: true });
   };
-  return { range, setRange, setScope };
+  return { range, setRange, setScope, now };
 }
 
 export function TaskWindowControls({ temporal = false }: { temporal?: boolean }) {
   const [params] = useSearchParams();
   const { range, setRange, setScope } = useTaskWindow(temporal);
+  const selectedScope = ['all', 'undated'].includes(params.get('scope') ?? '') ? params.get('scope')! : range.scope;
   const dated = isDatedWindow(range);
   const shift = (direction: number) => {
     if (['timeline', 'calendar'].includes(params.get('view') ?? '') && isCalendarMonth(range)) {
@@ -51,15 +59,15 @@ export function TaskWindowControls({ temporal = false }: { temporal?: boolean })
   const field = 'h-8 min-w-0 rounded-md border border-[var(--border)] bg-[var(--background)] px-2 text-xs text-foreground outline-none focus:border-[var(--accent-solid)]';
   return (
     <div aria-label="任务时间区间" className="flex min-w-0 flex-wrap items-center gap-2">
-      <select aria-label="任务时间范围" value={range.scope} onChange={(event) => setScope(event.target.value as WindowScope)} className={field}>
+      <select aria-label="任务时间范围" value={selectedScope} onChange={(event) => setScope(event.target.value as WindowScope)} className={field}>
         <option value="today">今天</option>
         <option value="week">本周</option>
         <option value="month">本月</option>
         <option value="custom">自定义区间</option>
-        {!temporal && <option value="all">全部时间</option>}
-        {!temporal && <option value="undated">未排期</option>}
+        <option value="all">全部时间</option>
+        <option value="undated">未排期</option>
       </select>
-      {dated && <div className="flex w-[330px] max-w-full items-center gap-1">
+      {dated && <>{temporal && ['all', 'undated'].includes(selectedScope) && <span className="text-[11px] text-muted">画布</span>}<div className="flex w-[330px] max-w-full items-center gap-1">
         <button aria-label="上一个时间段" title={`向前 ${range.days} 天`} onClick={() => shift(-1)} className="grid h-8 w-7 shrink-0 place-items-center rounded-md text-muted hover:bg-[var(--surface)] hover:text-foreground"><ChevronLeft size={15} /></button>
         <input aria-label="区间开始日期" type="date" value={dayKeyOf(range.start)} onChange={(event) => {
           const value = event.target.valueAsNumber;
@@ -70,7 +78,7 @@ export function TaskWindowControls({ temporal = false }: { temporal?: boolean })
           if (event.target.value) setRange(range.start, calendarDaysBetween(range.start, new Date(`${event.target.value}T00:00:00`)) + 1);
         }} className={`${field} flex-1`} />
         <button aria-label="下一个时间段" title={`向后 ${range.days} 天`} onClick={() => shift(1)} className="grid h-8 w-7 shrink-0 place-items-center rounded-md text-muted hover:bg-[var(--surface)] hover:text-foreground"><ChevronRight size={15} /></button>
-      </div>}
+      </div></>}
     </div>
   );
 }

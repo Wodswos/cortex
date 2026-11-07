@@ -8,6 +8,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { DB } from './db';
 import { decodeFrame, encodeFrame } from '../../../packages/crdt/src/framing';
 import { socketOriginAllowed, upgradeUrl, type WsIdentity } from './security';
+import { CortexStore } from '../../../packages/crdt/src/store';
 
 export const DOC_NAMES = ['root', 'tasks', 'events', 'links', 'sessions', 'habits', 'habitLogs'] as const;
 interface Room { doc: Y.Doc; conns: Set<WebSocket>; dirty: boolean }
@@ -98,6 +99,33 @@ export function setupSync(server: ServerType, db: DB, verifyTicket: (ticket: str
   }, 30000);
   heartbeat.unref();
   return {
+    /** Stage against live rooms, persist all changes atomically, then broadcast.
+     * No async work is allowed between the snapshot and commit. */
+    withStore<T>(userId: string, write: boolean, operation: (store: CortexStore) => T, commit?: (result: T) => void): T {
+      const store = new CortexStore(userId);
+      try {
+        const vectors = new Map<string, Uint8Array>();
+        for (const name of DOC_NAMES) {
+          const room = rooms.get(`${userId}:${name}`);
+          const snapshot = room ? Y.encodeStateAsUpdate(room.doc) : db.loadDocSnapshot(userId, name);
+          if (snapshot?.length) Y.applyUpdate(store.docs[name], snapshot, 'server-load');
+          vectors.set(name, Y.encodeStateVector(store.docs[name]));
+        }
+        const result = operation(store);
+        if (write) {
+          const changed = DOC_NAMES.filter(name => !Buffer.from(vectors.get(name)!).equals(Buffer.from(Y.encodeStateVector(store.docs[name]))) || Y.encodeStateAsUpdate(store.docs[name], vectors.get(name)).length > 2);
+          db.transaction(() => {
+            for (const name of changed) db.saveDocSnapshot(userId, name, Y.encodeStateAsUpdate(store.docs[name]));
+            commit?.(result);
+          });
+          for (const name of changed) {
+            const room = rooms.get(`${userId}:${name}`);
+            if (room) Y.applyUpdate(room.doc, Y.encodeStateAsUpdate(store.docs[name], vectors.get(name)), 'rest-api');
+          }
+        }
+        return result;
+      } finally { store.destroy(); for (const doc of Object.values(store.docs)) doc.destroy(); }
+    },
     snapshots(userId: string) {
       return Object.fromEntries(DOC_NAMES.map((name) => {
         const room = rooms.get(`${userId}:${name}`);

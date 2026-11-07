@@ -116,7 +116,7 @@ test('mind-map Ctrl/Cmd+A selects only visible real nodes, preserves text editin
   await node(page, 'beta').getByText('Beta title', { exact: true }).click();
   await page.keyboard.up('Control');
   await expect(selected(page)).toHaveCount(2);
-  await page.getByRole('region', { name: '工作概览', exact: true }).getByRole('button', { name: /^进行中/ }).click();
+  await page.getByRole('region', { name: '工作概览', exact: true }).getByRole('button', { name: /^当前工作/ }).click();
   await page.keyboard.press('Control+a');
   await expect(selected(page)).toHaveCount(3); // focus dims context without removing it
   await expect(node(page, 'beta')).toBeVisible();

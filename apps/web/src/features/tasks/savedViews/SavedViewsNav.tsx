@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { useCortex, useCortexData } from '@cortex/crdt';
 import { savedViewHref, type SavedTaskView } from '@cortex/core';
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, useSortable, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { GripVertical, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ChevronRight, GripVertical, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react';
 import { cn, Dropdown, DropdownContent, DropdownItem, DropdownTrigger } from '@cortex/ui';
 import { SaveViewDialog } from './SaveViewDialog';
 import { TASK_VIEWS } from '../viewOptions';
@@ -13,6 +13,19 @@ import { TASK_VIEWS } from '../viewOptions';
 export function SavedViewsNav() {
   const store = useCortex();
   const { settings } = useCortexData();
+  const collapseKey = `cortex:sidebar-saved-views-collapsed:${encodeURIComponent(store.userId)}`;
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem(collapseKey) === 'true'; } catch { return false; }
+  });
+  const collapse = (value: boolean) => {
+    setCollapsed(value);
+    try { localStorage.setItem(collapseKey, String(value)); } catch { /* Keep usable in memory. */ }
+  };
+  const previousIds = useRef(new Set(settings.savedViews.map(view => view.id)));
+  useEffect(() => {
+    if (settings.savedViews.some(view => !previousIds.current.has(view.id))) collapse(false);
+    previousIds.current = new Set(settings.savedViews.map(view => view.id));
+  }, [settings.savedViews, collapseKey]);
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const [editing, setEditing] = useState<SavedTaskView | null>(null);
@@ -32,7 +45,13 @@ export function SavedViewsNav() {
     void update(views);
   };
   return <>
-    <div className="workspace-section flex items-center justify-between"><span>快捷视图</span><button aria-label="添加快捷视图" title="添加快捷视图" onClick={() => setAdding(true)} className="grid h-6 w-6 place-items-center rounded text-muted hover:bg-[var(--surface)] hover:text-foreground"><Plus size={14} /></button></div>
+    <div className="workspace-section flex items-center justify-between">
+      <button aria-label={collapsed ? '展开快捷视图' : '收起快捷视图'} aria-expanded={!collapsed} aria-controls="sidebar-saved-views" onClick={() => collapse(!collapsed)} className="-ml-1 flex min-h-7 flex-1 items-center gap-1 text-left hover:text-foreground">
+        <ChevronRight size={13} className={cn('shrink-0 transition-transform', !collapsed && 'rotate-90')} /><span>快捷视图</span>{collapsed && <span className="ml-1 text-[10px] tabular-nums opacity-60">{settings.savedViews.length}</span>}
+      </button>
+      <button aria-label="添加快捷视图" title="添加快捷视图" onClick={() => setAdding(true)} className="grid h-6 w-6 place-items-center rounded text-muted hover:bg-[var(--surface)] hover:text-foreground"><Plus size={14} /></button>
+    </div>
+    <div id="sidebar-saved-views" hidden={collapsed}>
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={reorder} accessibility={{
       screenReaderInstructions: { draggable: '按空格开始排序，按上下方向键移动，再按空格确认；按 Esc 取消。' },
       announcements: {
@@ -52,6 +71,7 @@ export function SavedViewsNav() {
         </nav>
       </SortableContext>
     </DndContext>
+    </div>
     <span role="status" aria-label="快捷视图保存状态" className="sr-only">{status}</span>
     {editing && <SaveViewDialog key={editing.id} initial={editing} editing onClose={() => setEditing(null)} />}
     {adding && <SaveViewDialog initial={{ id: '', name: '全局四象限', view: 'matrix', scope: 'all', projectId: null }} onClose={() => setAdding(false)} />}

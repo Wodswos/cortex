@@ -16,9 +16,15 @@ describe('saved task workspace views', () => {
   });
   it('rejects invalid records, impossible dates and duplicate IDs before importing', () => {
     const item = DEFAULT_SAVED_VIEWS[0]!;
-    for (const value of [[{ ...item, name: ' ' }], [{ ...item, view: 'javascript:alert(1)' }], [item, item], [{ ...item, scope: 'all' }], [{ ...item, projectId: 'https://foreign.test' }], [{ ...item, scope: 'custom', from: '2026-02-31', to: '2026-03-05' }], [{ ...item, scope: 'custom', from: '2026-11-03', to: '2026-11-01' }], [{ ...item, scope: 'custom', from: '2026-11-03', to: '2028-12-01' }]]) {
+    for (const value of [[{ ...item, name: ' ' }], [{ ...item, view: 'javascript:alert(1)' }], [item, item], [{ ...item, work: 'invalid' }], [{ ...item, taskStatus: 'archived' }], [{ ...item, taskPriority: 'urgent' }], [{ ...item, taskTag: 'https://foreign.test' }], [{ ...item, projectId: 'https://foreign.test' }], [{ ...item, scope: 'custom', from: '2026-02-31', to: '2026-03-05' }], [{ ...item, scope: 'custom', from: '2026-11-03', to: '2026-11-01' }], [{ ...item, scope: 'custom', from: '2026-11-03', to: '2028-12-01' }]]) {
       expect(() => validateCortexData({ settings: { savedViews: value } })).toThrow();
     }
     expect(() => validateCortexData({ settings: { savedViews: [] } })).not.toThrow();
+  });
+  it('round trips shared filters and all-time temporal views while accepting legacy presets', () => {
+    const item = { id: 'work', name: '历史工作', view: 'gantt' as const, scope: 'all' as const, work: 'current' as const, taskStatus: 'unfinished' as const, taskPriority: 'high' as const, taskTag: 'tag' };
+    validateSavedViews([item, DEFAULT_SAVED_VIEWS[0]!]);
+    expect(Object.fromEntries(new URL(savedViewHref(item), 'https://cortex.test').searchParams)).toEqual({ saved: 'work', view: 'gantt', scope: 'all', work: 'current', taskStatus: 'unfinished', taskPriority: 'high', taskTag: 'tag' });
+    expect(() => validateSavedViews([{ ...item, scope: 'undated' }])).not.toThrow();
   });
 });

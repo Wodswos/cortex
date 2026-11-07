@@ -1,4 +1,8 @@
 import { calendarDaysBetween, dayKeyOf } from './time';
+import { WORK_FOCUS, type WorkFocus } from './work';
+
+export const TASK_FILTER_STATUSES = ['all', 'unfinished', 'todo', 'doing', 'done'] as const;
+export const TASK_FILTER_PRIORITIES = ['all', 'high', 'P0', 'P1', 'P2', 'P3'] as const;
 
 export const TASK_VIEW_KEYS = ['list', 'mindmap', 'matrix', 'gantt', 'timeline'] as const;
 export type TaskViewKey = (typeof TASK_VIEW_KEYS)[number];
@@ -12,6 +16,10 @@ export interface SavedTaskView {
   projectId?: string | null;
   from?: string;
   to?: string;
+  work?: WorkFocus;
+  taskStatus?: typeof TASK_FILTER_STATUSES[number];
+  taskPriority?: typeof TASK_FILTER_PRIORITIES[number];
+  taskTag?: string;
 }
 export const MAX_SAVED_VIEWS = 50;
 export const DEFAULT_SAVED_VIEWS: SavedTaskView[] = [
@@ -32,7 +40,10 @@ export function isSavedTaskView(value: unknown): value is SavedTaskView {
   const item = value as Record<string, unknown>;
   if (typeof item.id !== 'string' || !idPattern.test(item.id) || typeof item.name !== 'string' || !item.name.trim() || item.name.length > 60 || !TASK_VIEW_KEYS.includes(item.view as TaskViewKey) || !VIEW_SCOPES.includes(item.scope as ViewScope)) return false;
   if (item.projectId != null && (typeof item.projectId !== 'string' || !idPattern.test(item.projectId))) return false;
-  if (['gantt', 'timeline'].includes(String(item.view)) && ['all', 'undated'].includes(String(item.scope))) return false;
+  if (item.work != null && !WORK_FOCUS.includes(item.work as WorkFocus)) return false;
+  if (item.taskStatus != null && !TASK_FILTER_STATUSES.includes(item.taskStatus as SavedTaskView['taskStatus'] & string)) return false;
+  if (item.taskPriority != null && !TASK_FILTER_PRIORITIES.includes(item.taskPriority as SavedTaskView['taskPriority'] & string)) return false;
+  if (item.taskTag != null && (typeof item.taskTag !== 'string' || !idPattern.test(item.taskTag))) return false;
   if (item.scope === 'custom') {
     if (!validDay(item.from) || !validDay(item.to)) return false;
     const days = calendarDaysBetween(new Date(`${item.from}T00:00:00`), new Date(`${item.to}T00:00:00`));
@@ -48,5 +59,8 @@ export function savedViewHref(view: SavedTaskView): string {
   const params = new URLSearchParams({ saved: view.id, view: view.view, scope: view.scope });
   if (view.projectId) params.set('project', view.projectId);
   if (view.scope === 'custom') { params.set('from', view.from!); params.set('to', view.to!); }
+  for (const key of ['work', 'taskStatus', 'taskPriority', 'taskTag'] as const) {
+    if (view[key] && view[key] !== 'all') params.set(key, view[key]);
+  }
   return `/tasks?${params}`;
 }

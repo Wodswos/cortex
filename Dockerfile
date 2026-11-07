@@ -18,7 +18,7 @@ ENV NODE_ENV=production
 ENV PORT=30090
 ENV DATA_DIR=/app/data
 ENV PUBLIC_DIR=/app/public
-COPY --from=build /app/apps/server/dist/index.js ./server/index.js
+COPY --from=build /app/apps/server/dist ./server
 COPY --from=build /app/apps/web/dist ./public
 VOLUME /app/data
 EXPOSE 30090

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "esbuild src/index.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/index.js --external:bufferutil --external:utf-8-validate --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\"",
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/index.js --external:bufferutil --external:utf-8-validate --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" && node scripts/copy-swagger.mjs",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
@@ -14,6 +14,7 @@
     "@hono/node-server": "^1.14.0",
     "hono": "^4.7.0",
     "lib0": "^0.2.99",
+    "swagger-ui-dist": "^5.34.1",
     "ws": "^8.18.0",
     "y-protocols": "^1.0.6",
     "yjs": "^13.6.20"

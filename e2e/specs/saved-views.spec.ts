@@ -111,7 +111,8 @@ test('a project shortcut preserves its boundary, date interval and the project i
 
 test('native dropdowns reserve a consistent arrow gutter and saved-view configuration fits a narrow screen', async ({ page }) => {
   await page.goto('/tasks?view=list&scope=all');
-  await expect(page.getByRole('combobox', { name: '筛选任务', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '更多任务筛选', exact: true }).click();
+  await expect(page.getByRole('combobox', { name: '筛选任务状态', exact: true })).toBeVisible();
   const styles = await page.locator('select').evaluateAll((items) => items.map((item) => { const css = getComputedStyle(item); return { appearance: css.appearance, padding: parseFloat(css.paddingRight), image: css.backgroundImage }; }));
   expect(styles.length).toBeGreaterThan(1);
   for (const style of styles) { expect(style.appearance).toBe('none'); expect(style.padding).toBeGreaterThanOrEqual(32); expect(style.image).toContain('svg'); }

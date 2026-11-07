@@ -36,7 +36,7 @@ test('connections survive delayed font completion, same-size title edits and swi
   expect(frameCounts).toEqual(Array(12).fill(12));
   for (let iteration = 0; iteration < 4; iteration++) {
     await page.evaluate(() => document.fonts.dispatchEvent(new Event('loadingdone')));
-    await page.getByRole('region', { name: '工作概览', exact: true }).getByRole('button', { name: iteration % 2 ? '全图' : /^进行中/ }).click();
+    await page.getByRole('region', { name: '工作概览', exact: true }).getByRole('button', { name: iteration % 2 ? '全部' : /^当前工作/ }).click();
     await expect(edgePaths(page)).toHaveCount(12);
   }
   await page.getByRole('button', { name: '全局视图', exact: true }).click();

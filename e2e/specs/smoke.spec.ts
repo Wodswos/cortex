@@ -150,7 +150,8 @@ test('calendar drafts cancel without records and create only after confirmation'
   const draft = page.getByRole('dialog', { name: '新建日历任务' });
   await expect(draft).toBeVisible();
   await draft.getByLabel('新任务标题', { exact: true }).fill('discard this draft');
-  await page.getByRole('heading', { name: '当前任务', exact: true }).click();
+  const headingBox = (await page.getByRole('heading', { name: '当前任务', exact: true }).boundingBox())!;
+  await page.mouse.click(headingBox.x + 10, headingBox.y + 10);
   await expect(draft).toHaveCount(0);
   await cell.click({ position: { x: 20, y: 65 } });
   await page.keyboard.press('Escape');
@@ -251,7 +252,8 @@ test('week and day blank slots open cancellable task drafts, including on mobile
   expect(draftBounds!.x).toBeGreaterThanOrEqual(0);
   expect(draftBounds!.x + draftBounds!.width).toBeLessThanOrEqual(390);
   await draft.getByLabel('新任务标题', { exact: true }).fill('mobile cancelled draft');
-  await page.getByRole('heading', { name: '当前任务', exact: true }).click();
+  const headingBox = (await page.getByRole('heading', { name: '当前任务', exact: true }).boundingBox())!;
+  await page.mouse.click(headingBox.x + 10, headingBox.y + 10);
   await expect(draft).toHaveCount(0);
 });
 
@@ -770,23 +772,28 @@ test('mindmap focuses current work and factual risks while retaining project pat
   await page.goto('/tasks?view=mindmap');
   const overview = page.getByRole('region', { name: '工作概览', exact: true });
   const node = (id: string) => page.locator(`.react-flow__node[data-id="${id}"]`);
-  await expect(overview.getByRole('button', { name: '当前工作 2', exact: true })).toHaveAttribute(
+  await overview.getByRole('button', { name: '当前工作', exact: true }).click();
+  await expect(overview.getByRole('button', { name: '当前工作', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',
   );
-  for (const id of ['focus_project', 'focus_section', 'focus_doing', 'focus_week'])
+  for (const id of ['focus_project', 'focus_section', 'focus_doing', 'focus_overdue'])
     await expect(node(id)).toBeVisible();
-  for (const id of ['focus_done', 'focus_future', 'focus_overdue', 'focus_important'])
+  for (const id of ['focus_done', 'focus_future', 'focus_week', 'focus_important'])
     await expect(node(id).locator('[data-mind-muted]')).toHaveAttribute('data-mind-muted', 'true');
   await expect(node('focus_project').getByText('1/6 完成', { exact: true })).toBeVisible();
-  await overview.getByRole('button', { name: '逾期 1', exact: true }).click();
+  await overview.getByRole('button', { name: '逾期', exact: true }).click();
   await expect(node('focus_overdue')).toBeVisible();
   await expect(node('focus_project')).toBeVisible();
   await expect(node('focus_doing').locator('[data-mind-muted]')).toHaveAttribute('data-mind-muted', 'true');
-  await overview.getByRole('button', { name: '重要未排期 1', exact: true }).click();
+  await overview.getByRole('button', { name: '全部', exact: true }).click();
+  await page.getByRole('combobox', { name: '任务时间范围', exact: true }).selectOption('undated');
+  await page.getByRole('button', { name: '更多任务筛选', exact: true }).click();
+  await page.getByRole('combobox', { name: '筛选任务优先级', exact: true }).selectOption('high');
+  await page.keyboard.press('Escape');
   await expect(node('focus_important')).toBeVisible();
-  await expect(node('focus_overdue').locator('[data-mind-muted]')).toHaveAttribute('data-mind-muted', 'true');
-  await overview.getByRole('button', { name: '全图', exact: true }).click();
+  await expect(node('focus_overdue')).toHaveCount(0); // explicit undated range excludes dated branches
+  await overview.getByRole('button', { name: '全部', exact: true }).click();
   for (const id of ['focus_done', 'focus_future', 'focus_overdue', 'focus_important'])
     await expect(node(id)).toBeVisible();
   const help = page.locator('details[aria-label="导图操作说明"]');
@@ -877,9 +884,9 @@ test('mindmap edges meet node boundaries and stay level through filtered project
     await page.getByRole('dialog', { name: '导图配置', exact: true }).getByRole('button', { name: style, exact: true }).click();
     await page.getByRole('button', { name: '关闭导图配置', exact: true }).click();
     for (const [focus, visible, hidden] of [
-      ['全图', 'align_backlog', null],
+      ['全部', 'align_backlog', null],
       ['当前工作', 'align_current', 'align_backlog'],
-      ['重要未排期', 'align_unplanned', 'align_backlog'],
+      ['逾期', 'align_current', 'align_backlog'],
     ] as const) {
       await overview.getByRole('button', { name: new RegExp(`^${focus}( |$)`) }).click();
       await expect(page.locator(`.react-flow__node[data-id="${visible}"]`)).toBeVisible();
@@ -890,7 +897,7 @@ test('mindmap edges meet node boundaries and stay level through filtered project
   await page.getByRole('button', { name: 'Project A', exact: true }).click();
   await expect(page.locator('.react-flow__node[data-id="__cortex_all__"]')).toHaveCount(0);
   await expect.poll(geometryErrors).toEqual([]);
-  await page.getByRole('button', { name: '全部', exact: true }).click();
+  await page.getByRole('button', { name: '显示全部项目', exact: true }).click();
   await expect(page.locator('.react-flow__node[data-id="__cortex_all__"]')).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   if (browserName === 'chromium') {

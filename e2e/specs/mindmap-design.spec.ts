@@ -52,7 +52,7 @@ test('rightward hierarchy wraps long Chinese titles; focus and selection keep th
   await page.getByRole('button', { name: '查看所选任务详情', exact: true }).click();
   await expect(page.getByRole('region', { name: '任务详情', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '关闭任务详情', exact: true }).click();
-  await page.getByRole('region', { name: '工作概览' }).getByRole('button', { name: /^进行中/ }).click();
+  await page.getByRole('region', { name: '工作概览' }).getByRole('button', { name: /^当前工作/ }).click();
   await expect(node(page, 'future').locator('[data-mind-muted]')).toHaveAttribute('data-mind-muted', 'true');
   expect(await positions(page)).toEqual(layout);
   expect(await viewport(page)).toEqual(camera);

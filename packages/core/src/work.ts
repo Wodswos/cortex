@@ -40,7 +40,7 @@ export function workSignals(tasks: Task[], events: ScheduleEvent[], now: Date, w
     )
       unscheduled.add(task.id);
   }
-  return { current: new Set([...doing, ...week]), doing, week, overdue, unscheduled };
+  return { current: new Set([...doing, ...overdue]), doing, week, overdue, unscheduled };
 }
 
 /** Keep ancestor paths so focused tasks retain their position in the project. */

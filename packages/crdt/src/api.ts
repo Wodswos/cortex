@@ -17,6 +17,7 @@ export interface Invite {
   usedBy: string | null;
   revoked: boolean;
 }
+export interface AgentToken { id: string; name: string; permission: 'read' | 'write'; createdAt: number; expiresAt: number }
 
 export class ApiError extends Error {
   constructor(
@@ -52,6 +53,11 @@ async function req<T>(path: string, init?: RequestInit, timeoutMs = 8000): Promi
 }
 
 export const api = {
+  agentTokens(): Promise<{ data: AgentToken[] }> { return req('/api/tokens'); },
+  createAgentToken(value: { name: string; permission: 'read' | 'write'; expiresInDays: number }): Promise<{ data: AgentToken; token: string }> {
+    return req('/api/tokens', { method: 'POST', body: JSON.stringify(value) });
+  },
+  revokeAgentToken(id: string): Promise<unknown> { return req(`/api/tokens/${encodeURIComponent(id)}`, { method: 'DELETE' }); },
   /** 服务器状态:是否已初始化(有无用户)、注册是否需要邀请码 */
   status(): Promise<{ initialized: boolean; version: string }> {
     return req('/api/auth/status');

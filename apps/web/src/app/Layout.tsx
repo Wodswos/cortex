@@ -49,7 +49,7 @@ function SyncStatus() {
           ? '正在同步'
           : '离线可用';
   return (
-    <span className="inline-flex items-center gap-1.5 text-[11px] text-muted" title={label}>
+    <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[10px] text-muted" title={label}>
       {phase === 'local' ? (
         <CloudOff size={12} />
       ) : (
@@ -231,14 +231,14 @@ export function Layout() {
                 <span>回收站</span>
                 {data.tasks.some((task) => task.deletedAt != null) && <span className="ml-auto text-xs opacity-70">{data.tasks.filter((task) => task.deletedAt != null).length}</span>}
               </Link>
-              <Link to="/settings" className="workspace-nav">
-                <Settings />
-                <span>{user?.username ?? '设置与账号'}</span>
-              </Link>
-              <div className="flex items-center justify-between px-3 pt-2">
-                <SyncStatus />
+              <div aria-label="账号与同步" className="flex min-w-0 items-center gap-1">
+                <Link to="/settings" aria-label="设置与账号" title={user?.username ?? '设置与账号'} className="workspace-nav min-w-0 flex-1 !gap-2 !px-2">
+                  <Settings className="shrink-0" />
+                  <span className="min-w-0 truncate text-xs">{user?.username ?? '设置'}</span>
+                  <span className="ml-auto"><SyncStatus /></span>
+                </Link>
                 {!user && (
-                  <Link to="/login" className="text-[11px] text-muted hover:text-foreground">
+                  <Link to="/login" className="shrink-0 pr-2 text-[11px] text-muted hover:text-foreground">
                     登录
                   </Link>
                 )}

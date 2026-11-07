@@ -23,6 +23,7 @@ import { useAuth } from '@/app/auth';
 import { useTheme } from '@/app/theme';
 import { requestNotifPermission, notifSupported } from '@cortex/platform';
 import { isComposing } from '@/shared/ime';
+import { AgentApiSettings } from './AgentApiSettings';
 
 export default function SettingsPage() {
   const auth = useAuth();
@@ -252,6 +253,8 @@ export default function SettingsPage() {
             )}
           </CardContent>
         </Card>
+
+        {auth.phase === 'authed' && auth.user && <AgentApiSettings key={auth.user.id} />}
 
         {/* 外观 */}
         <Card>

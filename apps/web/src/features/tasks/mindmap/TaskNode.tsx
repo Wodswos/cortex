@@ -7,7 +7,7 @@ import { cn } from '@cortex/ui';
 import { useUI } from '@/state/ui';
 import { TaskCheckbox } from '@/shared/components';
 import { branchColor, mindColor, titleAppearance } from './appearance';
-import { VIRTUAL_ROOT_ID, type BranchSide, type MindMetrics } from './layout';
+import { mindMetrics, VIRTUAL_ROOT_ID, type BranchSide, type MindMetrics } from './layout';
 
 export interface MindNodeData extends Record<string, unknown> {
   task: Task; depth: number; side: BranchSide; branch: number; metrics: MindMetrics;
@@ -32,6 +32,8 @@ export const TaskNode = memo(function TaskNode({ data, selected }: NodeProps<Nod
   const color = branchColor(branch);
   const titleStyle = titleAppearance(task, depth, data.font);
   const [draft, setDraft] = useState(task.title);
+  const footer = progress.total > 0 || !!data.signalLabel;
+  const liveMetrics = editing ? mindMetrics({ ...task, title: draft }, depth, footer, data.font) : metrics;
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const finished = useRef(false);
   useEffect(() => {
@@ -45,11 +47,10 @@ export const TaskNode = memo(function TaskNode({ data, selected }: NodeProps<Nod
   useLayoutEffect(() => {
     const input = inputRef.current;
     if (input) { input.style.height = '0px'; input.style.height = `${input.scrollHeight}px`; }
-  }, [draft, editing]);
+  }, [draft, editing, liveMetrics.width, titleStyle.fontSize, titleStyle.fontFamily]);
   const finish = (title = draft) => { if (!finished.current) { finished.current = true; onCommit?.(title); } };
   const priority = priorityOf(task);
   const background = mindColor(task.mindBackground, true) ?? (root ? 'var(--mind-root)' : depth === 1 || structural ? `color-mix(in srgb, ${color} ${depth === 1 ? '10%' : '5%'}, var(--background))` : 'var(--background)');
-  const footer = progress.total > 0 || !!data.signalLabel;
   return (
     <div
       data-mind-kind={root ? 'root' : depth === 1 ? 'main' : structural ? 'group' : 'task'}
@@ -58,7 +59,7 @@ export const TaskNode = memo(function TaskNode({ data, selected }: NodeProps<Nod
       data-mind-muted={data.muted && !selected ? 'true' : 'false'}
       className={cn('group mind-node relative rounded-xl border', selected && 'mind-node-selected', task.status === 'done' && 'mind-node-done')}
       style={{
-        width: metrics.width, padding: `${metrics.padY}px ${metrics.padX}px`, background,
+        width: liveMetrics.width, padding: `${liveMetrics.padY}px ${liveMetrics.padX}px`, background,
         borderColor: root ? 'var(--mind-root)' : depth === 1 ? `color-mix(in srgb, ${color} 30%, var(--border))` : 'var(--border)',
         color: root && !task.mindBackground ? 'var(--mind-root-text)' : 'var(--foreground)',
         opacity: data.muted && !selected ? 0.3 : task.status === 'done' ? 0.65 : 1,

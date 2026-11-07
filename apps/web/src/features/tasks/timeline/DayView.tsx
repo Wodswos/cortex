@@ -47,7 +47,7 @@ export function DayView({
   onDateChange: (d: Date) => void;
   onCreateTask?: (dueAt: number, event: React.PointerEvent) => void;
 }) {
-  const data = useTaskViewData();
+  const data = useTaskViewData({ ancestors: false });
   const store = useCortex();
   const ui = useUI();
   const navigate = useNavigate();
@@ -118,9 +118,9 @@ export function DayView({
           t.status !== 'inbox' &&
           (t.status !== 'done' || data.settings.completedDisplay !== 'hidden') &&
           !isStructural(t) &&
-          t.dueAt != null &&
-          t.dueAt >= dayStart &&
-          t.dueAt < dayEnd,
+          (t.dueAt ?? t.startAt) != null &&
+          (t.dueAt ?? t.startAt)! >= dayStart &&
+          (t.dueAt ?? t.startAt)! < dayEnd,
       ),
     [data.tasks, data.settings.completedDisplay, dayStart, dayEnd],
   );
@@ -274,6 +274,7 @@ export function DayView({
             </div>
             <div
               ref={dayRef}
+              data-calendar-day-date={dayKey(date)}
               className={cn(
                 'relative rounded-xl border border-[var(--border)] bg-[var(--surface)]',
                 drag || selectRect ? 'cursor-grabbing' : 'cursor-copy',
@@ -338,7 +339,7 @@ export function DayView({
 
               {/* 到期任务标记:截止时间点上的虚线块,点击看任务详情 */}
               {dueTasks.map((t) => {
-                const m = (t.dueAt! - dayStart) / 60000;
+                const m = ((t.dueAt ?? t.startAt)! - dayStart) / 60000;
                 const color = t.status === 'done' ? 'var(--muted-foreground)' : 'var(--danger)';
                 return (
                   <button
@@ -352,12 +353,12 @@ export function DayView({
                       borderColor: `color-mix(in srgb, ${color} 55%, transparent)`,
                       background: `color-mix(in srgb, ${color} 8%, transparent)`,
                     }}
-                    title={`截止:${fmtHM(t.dueAt!)} · ${t.title || 'Untitled'}`}
+                    title={`${t.dueAt != null ? '截止' : '开始'}:${fmtHM((t.dueAt ?? t.startAt)!)} · ${t.title || 'Untitled'}`}
                   >
                     <Clock className="h-3 w-3 shrink-0" style={{ color }} />
                     <span className="truncate text-[11px] font-medium">{t.title || 'Untitled'}</span>
                     <span className="ml-auto shrink-0 text-[9px] tabular" style={{ color }}>
-                      {fmtHM(t.dueAt!)}
+                      {fmtHM((t.dueAt ?? t.startAt)!)}
                     </span>
                   </button>
                 );

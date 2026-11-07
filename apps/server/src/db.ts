@@ -1,6 +1,11 @@
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { createHash, randomBytes } from 'node:crypto';
+
+export interface ApiTokenRow { id: string; user_id: string; name: string; token_hash: string; permission: 'read' | 'write'; created_at: number; expires_at: number }
+export interface ApiRequestRow { fingerprint: string; status: number; response: string }
+const tokenHash = (token: string) => createHash('sha256').update(token).digest('hex');
 
 /**
  * SQLite 存储:账号 / 会话 / 邀请码 / Yjs 文档快照。
@@ -80,6 +85,17 @@ export class DB {
         password_cipher TEXT,
         PRIMARY KEY (user_id, id)
       );
+      CREATE TABLE IF NOT EXISTS api_tokens (
+        id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL,
+        token_hash TEXT UNIQUE NOT NULL, permission TEXT NOT NULL,
+        created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS api_tokens_user ON api_tokens(user_id);
+      CREATE TABLE IF NOT EXISTS api_requests (
+        user_id TEXT NOT NULL, request_key TEXT NOT NULL, fingerprint TEXT NOT NULL,
+        status INTEGER NOT NULL, response TEXT NOT NULL, expires_at INTEGER NOT NULL,
+        PRIMARY KEY(user_id, request_key)
+      );
     `);
   }
 
@@ -135,6 +151,36 @@ export class DB {
     this.db.prepare('DELETE FROM servers WHERE user_id = ? AND id = ?').run(userId, id);
   }
   close(): void { this.db.close(); }
+
+  transaction<T>(operation: () => T): T {
+    this.db.exec('BEGIN IMMEDIATE');
+    try { const result = operation(); this.db.exec('COMMIT'); return result; }
+    catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+  listApiTokens(userId: string): ApiTokenRow[] {
+    return this.db.prepare('SELECT * FROM api_tokens WHERE user_id = ? ORDER BY created_at DESC, id').all(userId) as unknown as ApiTokenRow[];
+  }
+  createApiToken(userId: string, name: string, permission: 'read' | 'write', days: number): { row: ApiTokenRow; token: string } {
+    const token = `ctx_${randomBytes(32).toString('hex')}`;
+    const row: ApiTokenRow = { id: crypto.randomUUID(), user_id: userId, name, permission, token_hash: tokenHash(token), created_at: Date.now(), expires_at: Date.now() + days * 86400000 };
+    this.db.prepare('INSERT INTO api_tokens (id,user_id,name,token_hash,permission,created_at,expires_at) VALUES (?,?,?,?,?,?,?)').run(row.id, row.user_id, row.name, row.token_hash, row.permission, row.created_at, row.expires_at);
+    return { row, token };
+  }
+  findApiToken(token: string): ApiTokenRow | null {
+    return this.db.prepare('SELECT * FROM api_tokens WHERE token_hash = ? AND expires_at > ?').get(tokenHash(token), Date.now()) as unknown as ApiTokenRow ?? null;
+  }
+  revokeApiToken(userId: string, id: string): boolean {
+    return Number(this.db.prepare('DELETE FROM api_tokens WHERE user_id = ? AND id = ?').run(userId, id).changes) > 0;
+  }
+  apiRequest(userId: string, key: string): ApiRequestRow | null {
+    return this.db.prepare('SELECT fingerprint,status,response FROM api_requests WHERE user_id = ? AND request_key = ? AND expires_at > ?').get(userId, key, Date.now()) as unknown as ApiRequestRow ?? null;
+  }
+  rememberApiRequest(userId: string, key: string, fingerprint: string, status: number, response: string): void {
+    this.db.prepare('DELETE FROM api_requests WHERE expires_at <= ?').run(Date.now());
+    const count = this.db.prepare('SELECT COUNT(*) AS n FROM api_requests WHERE user_id = ?').get(userId) as { n: number };
+    if (count.n >= 1000) throw new Error('幂等记录已达上限，请稍后重试');
+    this.db.prepare('INSERT OR REPLACE INTO api_requests (user_id,request_key,fingerprint,status,response,expires_at) VALUES (?,?,?,?,?,?)').run(userId, key, fingerprint, status, response, Date.now() + 86400000);
+  }
 
   // sessions
   createSession(userId: string, ttlMs = 180 * 86400_000): string {

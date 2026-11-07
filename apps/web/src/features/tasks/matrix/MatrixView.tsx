@@ -1,3 +1,4 @@
+import { workspaceTaskDefaults } from '../taskFilters';
 import React, { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import {
@@ -68,7 +69,7 @@ export function MatrixView() {
           {QUADRANTS.map((q) => (
             <QuadrantCell key={q.key} quadrant={q} tasks={byQ[q.key]} childrenMap={childrenMap} onNew={() => {
               const siblings = tasks.filter((t) => t.parentId === projectId);
-              const created = store.createTask({ title: '', status: 'todo', parentId: projectId, dueAt: windowDueAt(range), important: q.important, urgent: q.urgent, order: Math.max(-1000, ...siblings.map((task) => task.order)) + 1000 });
+              const created = store.createTask({ title: '', ...workspaceTaskDefaults(new URLSearchParams(window.location.search)), priority: quadrantToPriority(q.key), parentId: projectId, ...(windowDueAt(range) != null ? { dueAt: windowDueAt(range) } : {}), important: q.important, urgent: q.urgent, order: Math.max(-1000, ...siblings.map((task) => task.order)) + 1000 });
               ui.selectTask(created.id);
             }} />
           ))}

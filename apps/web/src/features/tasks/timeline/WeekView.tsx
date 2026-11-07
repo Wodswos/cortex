@@ -31,7 +31,7 @@ export function WeekView({
   rangeStart?: Date;
   dayCount?: number;
 }) {
-  const data = useTaskViewData();
+  const data = useTaskViewData({ ancestors: false });
   const scroll = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (scroll.current) scroll.current.scrollTop = 7 * PX_PER_HOUR;
@@ -46,10 +46,10 @@ export function WeekView({
   const dueByDay = useMemo(() => {
     const map = new Map<string, typeof data.tasks>();
     for (const t of activeTasks(data.tasks)) {
-      if (t.status === 'inbox' || t.status === 'done' && data.settings.completedDisplay === 'hidden' || t.dueAt == null || isStructural(t)) continue; // 结构节点不排期
-      const arr = map.get(dayKeyOf(t.dueAt)) ?? [];
+      if (t.status === 'inbox' || t.status === 'done' && data.settings.completedDisplay === 'hidden' || t.dueAt == null && t.startAt == null || isStructural(t)) continue; // 结构节点不排期
+      const arr = map.get(dayKeyOf((t.dueAt ?? t.startAt)!)) ?? [];
       arr.push(t);
-      map.set(dayKeyOf(t.dueAt), arr);
+      map.set(dayKeyOf((t.dueAt ?? t.startAt)!), arr);
     }
     return map;
   }, [data.tasks, data.settings.completedDisplay]);
@@ -146,7 +146,7 @@ export function WeekView({
                   );
                 })}
                 {(dueByDay.get(dayKeyOf(d)) ?? []).map((t) => {
-                  const m = (t.dueAt! - dayStart) / 60000;
+                  const m = ((t.dueAt ?? t.startAt)! - dayStart) / 60000;
                   const color = t.status === 'done' ? 'var(--muted-foreground)' : 'var(--danger)';
                   if (m < 0 || m >= 1440) return null;
                   return (
@@ -160,7 +160,7 @@ export function WeekView({
                         borderColor: `color-mix(in srgb, ${color} 55%, transparent)`,
                         background: `color-mix(in srgb, ${color} 8%, transparent)`,
                       }}
-                      title={`截止:${fmtHM(t.dueAt!)} · ${t.title || 'Untitled'}`}
+                      title={`${t.dueAt != null ? '截止' : '开始'}:${fmtHM((t.dueAt ?? t.startAt)!)} · ${t.title || 'Untitled'}`}
                     >
                       <Clock className="h-2.5 w-2.5 shrink-0" style={{ color }} />
                       <span className="truncate text-[9px] font-medium">{t.title || 'Untitled'}</span>

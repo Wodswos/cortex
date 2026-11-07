@@ -5,10 +5,16 @@ import { MonthView } from './MonthView';
 import { CalendarTaskDraft, type TaskDraftAnchor } from './CalendarTaskDraft';
 import { useTaskWindow } from '../TaskWindowControls';
 import { isCalendarMonth } from '../taskWindow';
+import { useTaskViewData } from '../useTaskViewData';
+import { useUI } from '@/state/ui';
 
 /** The calendar is a task workspace view; the former /calendar route redirects here. */
 export function CalendarView() {
   const { range, setRange } = useTaskWindow(true);
+  const data = useTaskViewData({ ancestors: false });
+  const selectTask = useUI(state => state.selectTask);
+  const scheduled = new Set(data.events.filter(event => !event.completed && event.end > Date.now()).map(event => event.taskId));
+  const undated = data.tasks.filter(task => task.startAt == null && task.dueAt == null && !scheduled.has(task.id));
   const [taskDraft, setTaskDraft] = useState<TaskDraftAnchor | null>(null);
   const viewProps = {
     date: new Date(range.start),
@@ -19,6 +25,10 @@ export function CalendarView() {
     <div className="min-h-0 flex-1">
       {range.days === 1 ? <DayView {...viewProps} /> : isCalendarMonth(range) ? <MonthView {...viewProps} /> : <WeekView {...viewProps} rangeStart={new Date(range.start)} dayCount={range.days} />}
     </div>
+    {range.days > 1 && undated.length > 0 && <div role="region" aria-label="日历未排期任务" className="flex max-h-24 shrink-0 flex-wrap items-center gap-2 overflow-y-auto border-t border-[var(--border)] px-4 py-2 text-xs">
+      <span className="text-muted">未排期 · {undated.length}</span>
+      {undated.map(task => <button key={task.id} className="max-w-60 truncate rounded-md bg-[var(--surface)] px-2 py-1 text-left hover:bg-[var(--selection)]" onClick={() => selectTask(task.id)}>{task.title || '未命名任务'}</button>)}
+    </div>}
     {taskDraft && <CalendarTaskDraft key={`${taskDraft.dueAt}:${taskDraft.x}:${taskDraft.y}`} anchor={taskDraft} onDismiss={() => setTaskDraft(null)} onCreated={() => setTaskDraft(null)} />}
   </div>;
 }
