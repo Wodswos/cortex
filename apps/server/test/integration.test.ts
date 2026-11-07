@@ -94,15 +94,16 @@ afterAll(async () => {
 
 describe('authenticated HTTP / WebSocket integration', () => {
   it('accepts native socket origins only with a valid, single-use session ticket', async () => {
-    await expect(open('/api/sync', 'capacitor://localhost')).rejects.toThrow();
-    await expect(open(`/api/sync?ticket=${await ticket(a)}`, 'capacitor://foreign')).rejects.toThrow('403');
-    const nativeTicket = await ticket(a);
-    const native = await open(`/api/sync?ticket=${nativeTicket}`, 'capacitor://localhost');
-    expect(native.readyState).toBe(WebSocket.OPEN);
-    native.close();
-    await expect(open(`/api/sync?ticket=${nativeTicket}`, 'capacitor://localhost')).rejects.toThrow();
-    // The native socket exception must not relax the browser HTTP/CSRF boundary.
-    expect((await request('/api/servers', a.cookie, undefined, 'GET', { Origin: 'capacitor://localhost' })).status).toBe(403);
+    for (const origin of ['capacitor://localhost', 'tauri://localhost']) {
+      await expect(open('/api/sync', origin)).rejects.toThrow('401');
+      const nativeTicket = await ticket(a);
+      await expect(open(`/api/sync?ticket=${nativeTicket}`, origin.replace('localhost', 'foreign'))).rejects.toThrow('403');
+      const native = await open(`/api/sync?ticket=${nativeTicket}`, origin);
+      expect(native.readyState).toBe(WebSocket.OPEN);
+      native.close();
+      await expect(open(`/api/sync?ticket=${nativeTicket}`, origin)).rejects.toThrow('401');
+      expect((await request('/api/servers', a.cookie, undefined, 'GET', { Origin: origin })).status).toBe(403);
+    }
   });
   it('reports missing account credentials instead of claiming there are no tmux sessions', async () => {
     await request('/api/servers/no-credentials', a.cookie, { name: 'unconfigured', host: 'alice@host.invalid' }, 'PUT');

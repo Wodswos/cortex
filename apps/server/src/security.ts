@@ -37,7 +37,7 @@ export function upgradeUrl(url: string | undefined): URL | null {
 
 /** Native sockets cannot override Origin; the handshake still requires a one-use session ticket. */
 export function socketOriginAllowed(headers: IncomingHttpHeaders): boolean {
-  return headers.origin === 'capacitor://localhost' || originAllowed(headers);
+  return headers.origin === 'capacitor://localhost' || headers.origin === 'tauri://localhost' || originAllowed(headers);
 }
 
 export interface WsIdentity { userId: string; sessionToken: string }

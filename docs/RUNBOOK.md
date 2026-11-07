@@ -84,7 +84,15 @@ corepack pnpm --filter @cortex/desktop dev
 corepack pnpm build:desktop
 ```
 
-本地资源路径 `../../web/dist` 相对于 `src-tauri`,图标已随仓库提供。⌥Space 聚焦窗口并触发快速收集。需要连接部署时,在 Tauri 窗口配置中设置对应 HTTPS URL;默认打包版本使用本地数据。当前 Linux 环境未编译 macOS 目标,不能视为已验证可发布包。
+桌面包从 `tauri://localhost` 加载内置页面并继续使用该来源的本地数据。使用 macOS 标题栏拖动窗口，按 ⌥Space 聚焦窗口并触发快速收集。
+
+桌面包默认连接 `http://115.190.3.4:30090`，可以在构建时指定其他服务器来源。
+
+```bash
+CORTEX_DESKTOP_API_ORIGIN=https://cortex.example.com corepack pnpm build:desktop
+```
+
+桌面包通过原生 HTTP 发送账号请求，并将会话 Cookie 保存在 WebKit 的原生存储中。同步和终端 WebSocket 使用同一个服务器地址。服务端为 `tauri://localhost` 来源的 WebSocket 校验一次性会话票据。开发模式通过 Vite 代理连接本机服务。
 
 ## iPhone Capacitor 壳
 

@@ -5,6 +5,11 @@ let expectedUserId: string | null = null;
 export function setApiUserId(id: string | null): void { expectedUserId = id; }
 export function apiUserId(): string | null { return expectedUserId; }
 
+type ApiRequest = { path: string; method: string; userId: string | null; body?: string; timeoutMs: number };
+type ApiTransport = (request: ApiRequest) => Promise<{ status: number; body: string }>;
+let apiTransport: ApiTransport | undefined;
+export function configureApiTransport(transport?: ApiTransport): void { apiTransport = transport; }
+
 export interface AuthUser {
   id: string;
   username: string;
@@ -28,16 +33,21 @@ export class ApiError extends Error {
   }
 }
 
-async function req<T>(path: string, init?: RequestInit, timeoutMs = 8000): Promise<T> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+async function req<T>(path: string, { method = 'GET', body }: { method?: string; body?: string } = {}, timeoutMs = 8000): Promise<T> {
   let res: Response;
-  try { res = await fetch(apiUrl(path), {
-    ...init,
-    credentials: 'include',
-    signal: init?.signal ?? controller.signal,
-    headers: { 'Content-Type': 'application/json', ...(expectedUserId ? { 'X-Cortex-User': expectedUserId } : {}), ...(init?.headers ?? {}) },
-  }); } finally { clearTimeout(timeout); }
+  if (apiTransport) {
+    const response = await apiTransport({ path, method, userId: expectedUserId, body, timeoutMs });
+    res = new Response(response.body || null, { status: response.status });
+  } else {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      res = await fetch(apiUrl(path), {
+        method, body, credentials: 'include', signal: controller.signal,
+        headers: { 'Content-Type': 'application/json', ...(expectedUserId ? { 'X-Cortex-User': expectedUserId } : {}) },
+      });
+    } finally { clearTimeout(timeout); }
+  }
   if (!res.ok) {
     let msg = `HTTP ${res.status}`;
     try {

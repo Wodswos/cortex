@@ -1,5 +1,16 @@
+mod desktop_api;
+
 pub fn run() {
+    let desktop_api = desktop_api::DesktopApi::new().expect("cannot initialize desktop API");
+    let desktop_init = desktop_api.initialization_script();
     tauri::Builder::default()
+        .manage(desktop_api)
+        .invoke_handler(tauri::generate_handler![desktop_api::desktop_api_request])
+        .plugin(
+            tauri::plugin::Builder::<_, ()>::new("cortex-desktop-api")
+                .js_init_script(desktop_init)
+                .build(),
+        )
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {

@@ -1,9 +1,9 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { configureApiOrigin, apiUrl, socketUrl } from '../src/endpoint';
-import { api, setApiUserId } from '../src/api';
+import { api, configureApiTransport, setApiUserId } from '../src/api';
 import { SyncClient } from '../src/sync';
 
-afterEach(() => { configureApiOrigin(''); setApiUserId(null); vi.unstubAllGlobals(); });
+afterEach(() => { configureApiOrigin(''); configureApiTransport(); setApiUserId(null); vi.unstubAllGlobals(); });
 
 it('keeps browser API and sockets on their current origin', () => {
   vi.stubGlobal('location', { protocol: 'https:', host: 'cortex.example.com' });
@@ -31,4 +31,26 @@ it('rejects credentials and non-origin URLs in server configuration', () => {
   for (const value of ['file:///tmp/backend', 'https://user:password@server.invalid', 'https://server.invalid/api', 'https://server.invalid/?token=secret']) {
     expect(() => configureApiOrigin(value)).toThrow();
   }
+});
+
+it('uses the desktop transport for account requests and preserves HTTP errors', async () => {
+  const send = vi.fn()
+    .mockResolvedValueOnce({ status: 200, body: '{"id":"account-a"}' })
+    .mockResolvedValueOnce({ status: 401, body: '{"error":"unauthorized"}' })
+    .mockResolvedValueOnce({ status: 409, body: '{"error":"账号已切换"}' });
+  const fetch = vi.fn();
+  vi.stubGlobal('fetch', fetch);
+  configureApiTransport(send);
+  await expect(api.login('alice', 'fixture-password')).resolves.toEqual({ id: 'account-a' });
+  expect(send).toHaveBeenCalledWith({
+    path: '/api/auth/login', method: 'POST', userId: null,
+    body: '{"username":"alice","password":"fixture-password"}', timeoutMs: 8000,
+  });
+  await expect(api.me()).resolves.toBeNull();
+  setApiUserId('account-a');
+  await expect(api.ticket('account-a')).rejects.toMatchObject({ status: 409, message: '账号已切换' });
+  expect(send).toHaveBeenLastCalledWith(expect.objectContaining({
+    path: '/api/auth/ticket?userId=account-a&purpose=sync', method: 'GET', userId: 'account-a',
+  }));
+  expect(fetch).not.toHaveBeenCalled();
 });
